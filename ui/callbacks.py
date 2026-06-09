@@ -1,7 +1,11 @@
 # callbacks.py
-# Logica reactiva del Modo 2D. Se organiza en callbacks separados para
-# cumplir el requisito de eficiencia: el phantom solo se recalcula cuando
-# cambia la forma o el mu, NO cuando se mueve el slider de angulos.
+# Logica reactiva del Modo 2D.
+# Cambios respecto a la version original:
+#   - Las figuras usan un tema OSCURO sin ejes para verse como visores.
+#   - El callback de reconstruccion ademas calcula RMSE/SSIM/PSNR (metricas)
+#     y dibuja el perfil de corte (fila central original vs reconstruida).
+# La estructura eficiente se mantiene: el phantom solo se recalcula cuando
+# cambia la forma o el mu, NO al mover el slider de angulos.
 
 # --- Terceros ---
 import numpy as np
@@ -13,41 +17,52 @@ from config import TAMANO_IMAGEN
 from core.phantom import crear_phantom
 from core.acquisition import generar_sinograma
 from core.reconstruction import reconstruir_fbp
+from core.metrics import calcular_metricas
 
 
-# Cache en memoria del phantom actual.
-#
-# Por que un cache global y no un dcc.Store con el array: el phantom es de
-# 256x256 floats (~65k valores). Serializarlo a JSON y transmitirlo en cada
-# movimiento del slider de angulos haria la interaccion lenta. Como la app es
-# local y de un solo usuario, guardarlo en memoria del servidor es suficiente
-# y mucho mas rapido. El dcc.Store "store-token" solo lleva un contador que
-# avisa al callback de reconstruccion que el phantom cambio.
 _CACHE = {"phantom": None, "version": 0}
 
 
-def _figura_heatmap(datos, titulo: str, colorscale: str) -> go.Figure:
-    # Construye un heatmap de Plotly a partir de una matriz 2D.
-    fig = go.Figure(data=go.Heatmap(z=datos, colorscale=colorscale, showscale=True))
+# ---------------------------------------------------------------------------
+# Helpers de presentacion
+# ---------------------------------------------------------------------------
+def _figura_visor(datos, colorscale: str) -> go.Figure:
+    # Heatmap "limpio": fondo transparente, sin ejes ni barra de color.
+    # Asi encaja dentro del visor oscuro (.viewer) del CSS.
+    fig = go.Figure(data=go.Heatmap(z=datos, colorscale=colorscale, showscale=False))
     fig.update_layout(
-        title=titulo,
-        margin=dict(l=10, r=10, t=40, b=10),
-        height=360,
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        autosize=True,
     )
-    # Origen arriba (convencion de imagen).
-    fig.update_yaxes(autorange="reversed")
-    fig.update_xaxes(constrain="domain")
+    fig.update_xaxes(visible=False, constrain="domain")
+    fig.update_yaxes(visible=False, autorange="reversed", scaleanchor="x")
+    return fig
+
+
+def _figura_perfil(original, reconstruida) -> go.Figure:
+    # Perfil 1D: la fila central de la imagen original vs la reconstruida.
+    fila = original.shape[0] // 2
+    x = np.arange(original.shape[1])
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=original[fila], mode="lines",
+                             line=dict(color="#9aa4b4", width=2), name="original"))
+    fig.add_trace(go.Scatter(x=x, y=reconstruida[fila], mode="lines",
+                             line=dict(color="#36b6d6", width=2), name="reconstruida"))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=4, b=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False, autosize=True,
+    )
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
     return fig
 
 
 def registrar_callbacks(app):
-    # Registra todos los callbacks del Modo 2D sobre la app Dash recibida.
 
-    # -----------------------------------------------------------------------
-    # 1) Semilla aleatoria.
-    #    Se renueva SOLO al cambiar la forma o al pulsar "Generar nueva pieza".
-    #    Asi, mover los sliders de mu no cambia la figura (misma semilla).
-    # -----------------------------------------------------------------------
+    # 1) Semilla aleatoria: se renueva al cambiar la forma o al "Generar nueva".
     @app.callback(
         Output("store-seed", "data"),
         Input("dropdown-forma", "value"),
@@ -56,12 +71,8 @@ def registrar_callbacks(app):
     def _nueva_semilla(_forma, _n_generar):
         return int(np.random.randint(0, 2**31 - 1))
 
-    # -----------------------------------------------------------------------
-    # 2) Phantom.
-    #    Se recalcula al cambiar forma, mu_pieza, mu_fondo, modo oculto
-    #    (posicion) o la semilla. Guarda el phantom en cache y publica un
-    #    token (version) para disparar la reconstruccion.
-    # -----------------------------------------------------------------------
+    # 2) Phantom: se recalcula al cambiar forma, mu o semilla. Lo cachea y
+    #    publica un token para disparar la reconstruccion.
     @app.callback(
         Output("store-token", "data"),
         Output("graf-phantom", "figure"),
@@ -73,52 +84,61 @@ def registrar_callbacks(app):
     )
     def _actualizar_phantom(forma, mu_pieza, mu_fondo, oculto, semilla):
         phantom = crear_phantom(
-            TAMANO_IMAGEN,
-            forma=forma,
-            mu_fondo=mu_fondo,
-            mu_pieza=mu_pieza,
-            posicion_aleatoria=bool(oculto),
-            semilla=semilla,
+            TAMANO_IMAGEN, forma=forma, mu_fondo=mu_fondo, mu_pieza=mu_pieza,
+            posicion_aleatoria=bool(oculto), semilla=semilla,
         )
         _CACHE["phantom"] = phantom
-        _CACHE["version"] += 1  # el token siempre cambia -> dispara reconstruccion
+        _CACHE["version"] += 1
+        return _CACHE["version"], _figura_visor(phantom, "gray")
 
-        fig = _figura_heatmap(phantom, "Phantom (mu real)", "gray")
-        return _CACHE["version"], fig
-
-    # -----------------------------------------------------------------------
-    # 3) Sinograma + reconstruccion.
-    #    Se dispara cuando cambia el phantom (token) o el numero de angulos.
-    #    Cuando solo cambian los angulos, lee el phantom del cache: NO lo
-    #    regenera (cumple el requisito de eficiencia).
-    # -----------------------------------------------------------------------
+    # 3) Sinograma + reconstruccion + metricas + perfil.
+    #    Se dispara al cambiar el phantom (token) o el numero de angulos.
     @app.callback(
         Output("graf-sinograma", "figure"),
         Output("graf-reconstruccion", "figure"),
+        Output("graf-perfil", "figure"),
+        Output("stat-rmse", "children"),
+        Output("stat-ssim", "children"),
+        Output("stat-psnr", "children"),
+        Output("bar-rmse", "style"),
+        Output("bar-ssim", "style"),
+        Output("bar-psnr", "style"),
+        Output("meta-sino", "children"),
         Input("store-token", "data"),
         Input("slider-angulos", "value"),
     )
     def _actualizar_reconstruccion(_token, num_angulos):
         phantom = _CACHE["phantom"]
         if phantom is None:
-            # Aun no se ha generado el phantom (primer render): no actualizar.
-            return no_update, no_update
+            return (no_update,) * 10
 
         sinograma, angulos = generar_sinograma(phantom, num_angulos)
         reconstruccion = reconstruir_fbp(sinograma, angulos)
 
-        fig_sino = _figura_heatmap(
-            sinograma, f"Sinograma ({num_angulos} ang.)", "hot"
-        )
-        fig_recon = _figura_heatmap(reconstruccion, "Reconstruccion FBP", "gray")
-        return fig_sino, fig_recon
+        fig_sino = _figura_visor(sinograma, "hot")
+        fig_recon = _figura_visor(reconstruccion, "gray")
+        fig_perfil = _figura_perfil(phantom, reconstruccion)
 
-    # -----------------------------------------------------------------------
+        m = calcular_metricas(phantom, reconstruccion)
+        rmse_txt = f"{m['rmse']:.3f}"
+        ssim_txt = f"{m['ssim']:.2f}"
+        psnr_txt = f"{m['psnr']:.1f}"
+
+        # Anchos de las barras (0-100%). RMSE: menor es mejor -> se invierte.
+        w_rmse = max(4, min(100, (1 - min(m["rmse"], 0.3) / 0.3) * 100))
+        w_ssim = max(0, min(100, m["ssim"] * 100))
+        w_psnr = max(0, min(100, m["psnr"] / 40 * 100))
+
+        return (
+            fig_sino, fig_recon, fig_perfil,
+            rmse_txt, ssim_txt, psnr_txt,
+            {"width": f"{w_rmse:.0f}%"},
+            {"width": f"{w_ssim:.0f}%"},
+            {"width": f"{w_psnr:.0f}%"},
+            f"{num_angulos} ang.",
+        )
+
     # 4) Visibilidad del phantom (modo oculto).
-    #    - Modo oculto OFF -> phantom visible.
-    #    - Modo oculto ON  -> phantom oculto, salvo que se pulse "Revelar".
-    #    - Generar nueva pieza estando en modo oculto -> se vuelve a ocultar.
-    # -----------------------------------------------------------------------
     @app.callback(
         Output("graf-phantom", "style"),
         Input("switch-oculto", "value"),
@@ -126,9 +146,9 @@ def registrar_callbacks(app):
         Input("btn-generar", "n_clicks"),
     )
     def _visibilidad_phantom(oculto, _n_revelar, _n_generar):
+        base = {"height": "300px"}
         if not oculto:
-            return {"display": "block"}
+            return {**base, "display": "block"}
         if ctx.triggered_id == "btn-revelar":
-            return {"display": "block"}
-        # El switch se acaba de activar o se genero una pieza nueva: ocultar.
-        return {"display": "none"}
+            return {**base, "display": "block"}
+        return {**base, "display": "none"}

@@ -1,0 +1,244 @@
+/* ============================================================
+   Simulador CT — Hoja de estilos
+   Dash carga AUTOMATICAMENTE cualquier .css dentro de assets/.
+   No hay que importarla en ningun lado: basta con que el archivo
+   viva en  tomografia_ct/assets/style.css
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+
+/* ---------- TOKENS (modo oscuro por defecto) ---------- */
+:root {
+  --bg:        #0e1116;
+  --bg-grad:   #11151c;
+  --panel:     #171b22;
+  --panel-2:   #1c212a;
+  --elev:      #20262f;
+  --viewer:    #080a0d;
+  --line:      rgba(255,255,255,.085);
+  --line-2:    rgba(255,255,255,.14);
+  --text:      #e9edf3;
+  --text-soft: #9aa4b4;
+  --text-dim:  #626c7c;
+  --accent:    oklch(0.80 0.115 210);
+  --accent-d:  oklch(0.64 0.10 210);
+  --accent-bg: oklch(0.80 0.115 210 / .12);
+  --hot:       oklch(0.80 0.12 68);
+  --warn:      oklch(0.72 0.15 25);
+  --field:     #080a0d;
+  --btn-hover: #262c36;
+  --track-bg:  rgba(255,255,255,.12);
+  --radius:    14px;
+  --radius-s:  10px;
+}
+
+/* ---------- MODO CLARO (se activa con la clase .light en <body>) ---------- */
+body.light {
+  --bg:        #eef1f5;
+  --bg-grad:   #f8fafd;
+  --panel:     #ffffff;
+  --panel-2:   #f7f9fc;
+  --elev:      #eef2f7;
+  --field:     #ffffff;
+  --btn-hover: #e4e9f0;
+  --line:      rgba(18,24,36,.10);
+  --line-2:    rgba(18,24,36,.17);
+  --text:      #1b2433;
+  --text-soft: #55606f;
+  --text-dim:  #8893a2;
+  --track-bg:  rgba(20,28,42,.13);
+  /* OJO: --viewer se queda oscuro a proposito: el gris del CT resalta sobre negro */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 50% -240px, var(--bg-grad), var(--bg)) fixed;
+  color: var(--text);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+.mono, .ct-mono { font-family: "IBM Plex Mono", monospace; }
+
+/* El contenedor dbc.Container(fluid=True) de Dash */
+.ct-app { max-width: 1320px; margin: 0 auto; padding: 0 22px 64px; }
+
+/* ===================== HEADER ===================== */
+.brandbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 2px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line);
+}
+.brandbar .logo-slot {
+  width: 34px; height: 34px; flex: none; border: 1px solid var(--line);
+  border-radius: 7px; overflow: hidden; display: flex; align-items: center;
+  justify-content: center; color: var(--text-dim); font-size: 9px; background: var(--elev);
+}
+.brandbar .logo-slot img { width: 100%; height: 100%; object-fit: contain; }
+.brandbar .sep { color: var(--line-2); }
+.brandbar .org { color: var(--text); font-weight: 500; }
+.brandbar .right { margin-left: auto; color: var(--text-dim); letter-spacing: 1px; }
+
+.titlerow {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px; flex-wrap: wrap; padding: 20px 2px 16px;
+}
+.titlerow h1 {
+  margin: 0; font-size: 25px; font-weight: 600; letter-spacing: -.2px;
+  display: flex; align-items: center; gap: 12px;
+}
+.titlerow h1 .tag {
+  font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500;
+  letter-spacing: .5px; color: var(--accent); padding: 3px 9px;
+  border: 1px solid var(--accent); border-radius: 100px; background: var(--accent-bg);
+  text-transform: uppercase;
+}
+.titlerow .sub { margin: 5px 0 0; color: var(--text-soft); font-size: 13.5px; }
+
+.status { display: flex; align-items: center; gap: 9px; font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--text-soft); }
+.status .led { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); animation: ctpulse 2.4s ease-in-out infinite; }
+@keyframes ctpulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+/* theme switcher */
+.themebar { display: flex; align-items: center; gap: 9px; }
+.themebar .lbl { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
+.swatches { display: flex; gap: 6px; }
+.swatch { width: 19px; height: 19px; border-radius: 50%; cursor: pointer; padding: 0; border: 2px solid transparent; box-shadow: 0 0 0 1px var(--line-2) inset; transition: transform .12s; }
+.swatch:hover { transform: scale(1.12); }
+.swatch.active { border-color: var(--text); box-shadow: 0 0 0 1px var(--bg), 0 0 8px 0 currentColor; }
+.themebar .divider { width: 1px; height: 18px; background: var(--line-2); }
+.modebtn { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .5px; color: var(--text-soft); background: var(--elev); border: 1px solid var(--line-2); border-radius: 100px; padding: 4px 11px; cursor: pointer; transition: all .14s; }
+.modebtn:hover { border-color: var(--text-dim); color: var(--text); }
+
+/* ===================== TABS (dcc.Tabs) ===================== */
+/* dcc.Tabs genera .tab y, para el activo, .tab--selected (les pasamos esas clases) */
+.ct-tabs { display: flex !important; gap: 4px; border-bottom: 1px solid var(--line) !important; margin-bottom: 22px; }
+.ct-tab {
+  background: none !important; border: none !important; cursor: pointer;
+  font-family: "IBM Plex Sans", sans-serif !important; font-size: 14px !important; font-weight: 500;
+  color: var(--text-dim) !important; padding: 11px 16px !important; position: relative;
+}
+.ct-tab:hover { color: var(--text-soft) !important; }
+.ct-tab--sel { color: var(--text) !important; background: none !important; border: none !important; }
+.ct-tab--sel::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
+.ct-tab .soon { font-size: 9px; letter-spacing: .5px; text-transform: uppercase; color: var(--text-dim); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 6px; }
+
+/* ===================== CARD ===================== */
+.ct-card { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--line); border-radius: var(--radius); }
+.ct-card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.ct-card-h .t { font-size: 12px; font-weight: 600; letter-spacing: .3px; color: var(--text); }
+.ct-card-h .m { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-dim); }
+
+/* ===================== CONTROL BAR ===================== */
+.controls { display: grid; grid-template-columns: 1.3fr 1.7fr 1.2fr 1.2fr auto auto; gap: 18px; align-items: end; padding: 16px 18px; margin-bottom: 20px; }
+.field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.field > .clbl { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--text-dim); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.field > .clbl .mu { text-transform: none; font-style: italic; }
+.field > .clbl .v { color: var(--accent); font-weight: 500; letter-spacing: .3px; }
+
+/* ---- selector de forma: dbc.Select = <select class="form-select"> nativo ---- */
+.field select.form-select,
+.field .form-select {
+  background-color: var(--field) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line-2) !important;
+  border-radius: 9px !important;
+  height: 38px !important;
+  font-family: "IBM Plex Sans", sans-serif !important;
+  font-size: 13.5px !important;
+  padding: 0 30px 0 12px !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%239aa4b4' stroke-width='1.3'/></svg>") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 11px center !important;
+  background-size: 12px !important;
+  box-shadow: none !important;
+}
+.field select.form-select:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-bg) !important; }
+.field select.form-select option { background: var(--panel); color: var(--text); }
+
+/* ---- dcc.Slider (rc-slider) ---- */
+.field .rc-slider { margin: 4px 4px 18px; }
+.field .rc-slider-rail { background: var(--track-bg) !important; height: 4px !important; }
+.field .rc-slider-track { background: var(--accent) !important; height: 4px !important; }
+.field .rc-slider-handle { width: 15px !important; height: 15px !important; margin-top: -5.5px !important; background: var(--text) !important; border: 3px solid var(--accent) !important; opacity: 1 !important; box-shadow: 0 1px 4px rgba(0,0,0,.5) !important; }
+.field .rc-slider-handle:hover, .field .rc-slider-handle:active { border-color: var(--accent) !important; box-shadow: 0 0 0 5px var(--accent-bg) !important; }
+.field .rc-slider-mark-text { color: var(--text-dim) !important; font-family: "IBM Plex Mono", monospace; font-size: 9.5px !important; }
+.field .rc-slider-mark-text-active { color: var(--text-soft) !important; }
+.field .rc-slider-dot { display: none !important; }
+.field .rc-slider-tooltip-inner { background: var(--accent) !important; color: #06222a !important; font-family: "IBM Plex Mono", monospace; font-weight: 600; border-radius: 6px; box-shadow: none; }
+.field .rc-slider-tooltip-arrow { border-bottom-color: var(--accent) !important; border-top-color: var(--accent) !important; }
+/* el de "mu pieza" marcado con .hot pinta su track en ambar */
+.field.hot .rc-slider-track { background: var(--hot) !important; }
+.field.hot .rc-slider-handle { border-color: var(--hot) !important; }
+
+/* ---- switch (dbc.Switch / .form-check) ---- */
+.field .form-check-input { width: 40px !important; height: 22px !important; background: var(--field) !important; border: 1px solid var(--line-2) !important; cursor: pointer; }
+.field .form-check-input:checked { background: var(--accent) !important; border-color: var(--accent) !important; }
+.field .form-check-label { color: var(--text-soft) !important; font-size: 13.5px; }
+
+/* ---- buttons (dbc.Button) ---- */
+.btns { display: flex; gap: 9px; }
+.ct-btn, .btns .btn { font-family: "IBM Plex Sans" !important; font-size: 13px !important; font-weight: 500 !important; cursor: pointer; padding: 9px 15px !important; border-radius: 9px !important; border: 1px solid var(--line-2) !important; background: var(--elev) !important; color: var(--text) !important; white-space: nowrap; transition: all .14s; }
+.btns .btn:hover { border-color: var(--text-dim) !important; background: var(--btn-hover) !important; }
+.btns .btn.btn-primary, .ct-btn.primary { background: var(--accent) !important; color: #06222a !important; border-color: var(--accent) !important; font-weight: 600 !important; }
+.btns .btn:disabled { opacity: .4; }
+
+/* ===================== PIPELINE ===================== */
+.pipeline { display: grid; grid-template-columns: 1fr auto 1fr auto 1.18fr; gap: 8px; align-items: stretch; margin-bottom: 20px; }
+.stage { display: flex; flex-direction: column; }
+.stage .ct-card-h { border-radius: var(--radius) var(--radius) 0 0; }
+.stage.recon .ct-card-h { border-bottom-color: var(--accent); box-shadow: inset 0 -1px 0 var(--accent); }
+.badge-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+
+/* el dcc.Graph va dentro de un visor oscuro con cromo de equipo */
+.viewer { position: relative; background: var(--viewer); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; padding: 6px; }
+.viewer .js-plotly-plot, .viewer .plot-container { background: transparent !important; }
+.viewer .ticks { position: absolute; inset: 7px; pointer-events: none; z-index: 2; }
+.viewer .ticks span { position: absolute; width: 11px; height: 11px; border: 1px solid rgba(255,255,255,.22); }
+.viewer .ticks span:nth-child(1){ top:0; left:0; border-right:0; border-bottom:0; }
+.viewer .ticks span:nth-child(2){ top:0; right:0; border-left:0; border-bottom:0; }
+.viewer .ticks span:nth-child(3){ bottom:0; left:0; border-right:0; border-top:0; }
+.viewer .ticks span:nth-child(4){ bottom:0; right:0; border-left:0; border-top:0; }
+
+/* connector con la operacion (Radon / iradon) */
+.connector { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 0 4px; min-width: 70px; }
+.connector .op { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--accent); letter-spacing: .5px; padding: 3px 9px; border: 1px solid var(--accent); border-radius: 100px; background: var(--accent-bg); white-space: nowrap; }
+.connector .arrow { width: 100%; height: 2px; background: linear-gradient(90deg, transparent, var(--accent-d)); position: relative; }
+.connector .arrow::after { content: ""; position: absolute; right: -1px; top: 50%; transform: translateY(-50%); border-left: 7px solid var(--accent-d); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.connector .desc { font-size: 10px; color: var(--text-dim); text-align: center; line-height: 1.3; }
+
+/* ===================== VALIDATION ===================== */
+.validation { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; }
+.metrics { padding: 4px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+.stat { padding: 14px 12px 13px; border-radius: var(--radius-s); position: relative; }
+.stat .k { font-family: "IBM Plex Mono"; font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
+.stat .val { font-family: "IBM Plex Mono"; font-size: 30px; font-weight: 500; line-height: 1.1; margin-top: 6px; letter-spacing: -.5px; }
+.stat .val small { font-size: 13px; color: var(--text-dim); font-weight: 400; }
+.stat .bar { height: 3px; border-radius: 3px; background: var(--track-bg); margin-top: 9px; overflow: hidden; }
+.stat .bar i { display: block; height: 100%; border-radius: 3px; }
+.stat.ssim .val { color: var(--accent); }
+.stat.ssim .bar i { background: var(--accent); }
+.stat.rmse .bar i { background: var(--hot); }
+.stat.psnr .bar i { background: var(--text-soft); }
+
+.note-foot { margin-top: 22px; padding: 14px 18px; border-radius: var(--radius); border: 1px dashed var(--line-2); color: var(--text-soft); font-size: 13px; display: flex; align-items: center; gap: 12px; background: rgba(127,127,127,.04); }
+.note-foot .ct-mono { color: var(--accent); }
+
+/* ===================== PLACEHOLDER (otras tabs) ===================== */
+.placeholder { padding: 80px 24px; text-align: center; border-radius: var(--radius); border: 1px solid var(--line); background: linear-gradient(180deg, var(--panel), var(--panel-2)); }
+.placeholder .icon { width: 46px; height: 46px; margin: 0 auto 18px; border: 1.5px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--accent); font-family: "IBM Plex Mono"; font-size: 18px; }
+.placeholder .big { font-size: 19px; font-weight: 600; margin-bottom: 8px; }
+.placeholder .sm { color: var(--text-soft); font-size: 14px; max-width: 460px; margin: 0 auto; }
+
+@media (max-width: 1080px) { .controls { grid-template-columns: 1fr 1fr 1fr; } }
+@media (max-width: 920px) {
+  .pipeline { grid-template-columns: 1fr; }
+  .connector { flex-direction: row; min-height: 44px; padding: 6px 0; }
+  .connector .arrow { width: 60px; }
+  .validation { grid-template-columns: 1fr; }
+}
