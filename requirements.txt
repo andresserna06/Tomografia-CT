@@ -1,0 +1,6 @@
+numpy
+scikit-image
+scipy
+plotly
+dash
+dash-bootstrap-components
