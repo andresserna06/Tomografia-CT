@@ -1,195 +1,158 @@
-# generator.py
-# Generadores de formas 2D. Cada funcion devuelve una MASCARA BOOLEANA NxN:
-# True en los pixeles que pertenecen a la pieza, False en el fondo.
-# Esa mascara la usa core/phantom.py para "estampar" el coeficiente de
-# absorcion de la pieza sobre el fondo.
+# generator_3d.py
+# Generadores de formas 3D. Cada funcion devuelve una MASCARA BOOLEANA NxNxN:
+# True en los voxeles que pertenecen a la pieza, False en el fondo.
+# Esa mascara la usa core/phantom_3d.py para "estampar" el coeficiente de
+# atenuacion de la pieza sobre el fondo volumetrico.
 
-# --- Terceros ---
 import numpy as np
 from scipy.ndimage import gaussian_filter
-from skimage.draw import polygon
-
 
 # ---------------------------------------------------------------------------
-# Utilidades internas
+# Utilidades internas 3D
 # ---------------------------------------------------------------------------
 
-def _centro_por_defecto(tamano, centro):
-    # Si no se especifica centro, se usa el centro geometrico de la imagen.
-    # El centro se expresa como (cx, cy) = (columna, fila).
+def _centro_por_defecto_3d(tamano, centro):
+    # Si no se especifica centro, se usa el centro geometrico del volumen.
+    # El centro se expresa como (cx, cy, cz) = (x, y, z).
     if centro is None:
-        return tamano / 2.0, tamano / 2.0
-    return float(centro[0]), float(centro[1])
+        return tamano / 2.0, tamano / 2.0, tamano / 2.0
+    return float(centro[0]), float(centro[1]), float(centro[2])
 
-
-def _pintar_rectangulo(mascara, fila0, fila1, col0, col1):
-    # Marca como True un rectangulo, recortando los indices al rango valido.
-    # Evita los indices negativos de numpy (que "envuelven" por el otro lado).
-    alto, ancho = mascara.shape
-    fila0 = max(0, int(fila0))
-    col0 = max(0, int(col0))
-    fila1 = min(alto, int(fila1))
-    col1 = min(ancho, int(col1))
-    if fila1 > fila0 and col1 > col0:
-        mascara[fila0:fila1, col0:col1] = True
-
-
-def _mascara_desde_poligono(tamano, xs, ys):
-    # Rasteriza un poligono (coordenadas de sus vertices) a una mascara booleana.
-    # skimage.draw.polygon trabaja en (fila, columna) = (y, x).
-    rr, cc = polygon(ys, xs, shape=(tamano, tamano))
-    mascara = np.zeros((tamano, tamano), dtype=bool)
-    mascara[rr, cc] = True
-    return mascara
-
+def _pintar_bloque_3d(mascara, z0, z1, y0, y1, x0, x1):
+    # Marca como True un paralelepipedo (caja 3D).
+    prof, alto, ancho = mascara.shape
+    z0, y0, x0 = max(0, int(z0)), max(0, int(y0)), max(0, int(x0))
+    z1, y1, x1 = min(prof, int(z1)), min(alto, int(y1)), min(ancho, int(x1))
+    
+    if z1 > z0 and y1 > y0 and x1 > x0:
+        mascara[z0:z1, y0:y1, x0:x1] = True
 
 # ---------------------------------------------------------------------------
-# Formas regulares
+# Formas regulares 3D
 # ---------------------------------------------------------------------------
 
-def circulo(tamano, radio, centro=None):
-    # Circulo de radio dado centrado en 'centro'.
-    cx, cy = _centro_por_defecto(tamano, centro)
-    yy, xx = np.ogrid[:tamano, :tamano]
-    return (xx - cx) ** 2 + (yy - cy) ** 2 <= radio ** 2
+def esfera(tamano, radio, centro=None):
+    # Esfera de radio dado. Equivalente 3D del circulo.
+    cx, cy, cz = _centro_por_defecto_3d(tamano, centro)
+    zz, yy, xx = np.ogrid[:tamano, :tamano, :tamano]
+    
+    # Ecuacion de la esfera
+    return (xx - cx)**2 + (yy - cy)**2 + (zz - cz)**2 <= radio**2
 
+def elipsoide(tamano, radio_x, radio_y, radio_z, centro=None):
+    # Elipsoide con tres semiejes (sin rotacion para simplificar computo).
+    cx, cy, cz = _centro_por_defecto_3d(tamano, centro)
+    zz, yy, xx = np.ogrid[:tamano, :tamano, :tamano]
 
-def elipse(tamano, radio_x, radio_y, angulo_rotacion=0.0, centro=None):
-    # Elipse con semiejes radio_x / radio_y, rotada 'angulo_rotacion' grados.
-    cx, cy = _centro_por_defecto(tamano, centro)
-    yy, xx = np.ogrid[:tamano, :tamano]
+    return ((xx - cx) / radio_x)**2 + ((yy - cy) / radio_y)**2 + ((zz - cz) / radio_z)**2 <= 1.0
 
-    # Se trasladan las coordenadas al centro de la elipse...
-    x = xx - cx
-    y = yy - cy
+def cilindro(tamano, radio, altura, centro=None):
+    # Cilindro alineado con el eje Z.
+    cx, cy, cz = _centro_por_defecto_3d(tamano, centro)
+    zz, yy, xx = np.ogrid[:tamano, :tamano, :tamano]
+    
+    # Mascara del circulo en 2D (plano XY)
+    mascara_xy = (xx - cx)**2 + (yy - cy)**2 <= radio**2
+    # Mascara de la altura en el eje Z
+    mascara_z = (zz >= cz - altura / 2.0) & (zz <= cz + altura / 2.0)
+    
+    # Interseccion de ambas mascaras
+    return mascara_xy & mascara_z
 
-    # ...y se rotan al sistema propio de la elipse (rotacion inversa del angulo).
-    theta = np.deg2rad(angulo_rotacion)
-    x_rot = x * np.cos(theta) + y * np.sin(theta)
-    y_rot = -x * np.sin(theta) + y * np.cos(theta)
-
-    # Ecuacion canonica de la elipse: (x/a)^2 + (y/b)^2 <= 1.
-    return (x_rot / radio_x) ** 2 + (y_rot / radio_y) ** 2 <= 1.0
-
-
-def estrella(tamano, num_puntas, radio_ext, radio_int, centro=None):
-    # Estrella de 'num_puntas' alternando radio exterior (puntas) e interior
-    # (valles). Se construye como un poligono de 2*num_puntas vertices.
-    cx, cy = _centro_por_defecto(tamano, centro)
-
-    angulos = np.linspace(0.0, 2.0 * np.pi, 2 * num_puntas, endpoint=False)
-    radios = np.empty(2 * num_puntas)
-    radios[0::2] = radio_ext  # vertices pares -> puntas
-    radios[1::2] = radio_int  # vertices impares -> valles
-
-    xs = cx + radios * np.cos(angulos)
-    ys = cy + radios * np.sin(angulos)
-    return _mascara_desde_poligono(tamano, xs, ys)
-
-
-def forma_L(tamano, ancho, alto, grosor, centro=None):
-    # Pieza con forma de "L": una barra vertical y una base horizontal.
-    cx, cy = _centro_por_defecto(tamano, centro)
-    x0 = cx - ancho / 2.0  # esquina superior-izquierda del bounding box
-    y0 = cy - alto / 2.0
-
-    mascara = np.zeros((tamano, tamano), dtype=bool)
-    _pintar_rectangulo(mascara, y0, y0 + alto, x0, x0 + grosor)          # barra vertical
-    _pintar_rectangulo(mascara, y0 + alto - grosor, y0 + alto, x0, x0 + ancho)  # base
-    return mascara
-
-
-def forma_T(tamano, ancho, alto, grosor, centro=None):
-    # Pieza con forma de "T": una barra horizontal arriba y una vertical central.
-    cx, cy = _centro_por_defecto(tamano, centro)
+def forma_L_3d(tamano, ancho, alto, prof, grosor, centro=None):
+    # Equivalente 3D de la forma L (como dos bloques interceptados).
+    cx, cy, cz = _centro_por_defecto_3d(tamano, centro)
     x0 = cx - ancho / 2.0
     y0 = cy - alto / 2.0
-
-    mascara = np.zeros((tamano, tamano), dtype=bool)
-    _pintar_rectangulo(mascara, y0, y0 + grosor, x0, x0 + ancho)                 # barra superior
-    _pintar_rectangulo(mascara, y0, y0 + alto, cx - grosor / 2.0, cx + grosor / 2.0)  # barra vertical
+    z0 = cz - prof / 2.0
+    
+    mascara = np.zeros((tamano, tamano, tamano), dtype=bool)
+    # Bloque vertical
+    _pintar_bloque_3d(mascara, z0, z0 + prof, y0, y0 + alto, x0, x0 + grosor)
+    # Bloque horizontal (base)
+    _pintar_bloque_3d(mascara, z0, z0 + prof, y0 + alto - grosor, y0 + alto, x0, x0 + ancho)
     return mascara
 
-
 # ---------------------------------------------------------------------------
-# Formas irregulares
+# Formas irregulares 3D
 # ---------------------------------------------------------------------------
 
-def poligono_irregular(tamano, num_vertices, radio_min, radio_max,
-                       centro=None, rng=None, sigma=None):
-    # Poligono de aspecto organico e impredecible.
-    #
-    # Estrategia: se generan vertices a angulos aleatorios con radios aleatorios
-    # entre radio_min y radio_max (esto ya da una silueta muy irregular). Luego
-    # se rasteriza y se SUAVIZAN los bordes con un filtro gaussiano, de modo que
-    # las esquinas duras se redondean y la pieza parece una mancha natural, no
-    # un poligono regular con ruido minimo.
-    cx, cy = _centro_por_defecto(tamano, centro)
+def masa_irregular_3d(tamano, radio_base, centro=None, rng=None, sigma=None):
+    # Genera un volumen organico 3D (similar al poligono irregular).
+    # Estrategia: Crea una esfera base, le anade ruido aleatorio tridimensional,
+    # y luego suaviza fuertemente el volumen completo.
+    cx, cy, cz = _centro_por_defecto_3d(tamano, centro)
     if rng is None:
         rng = np.random.default_rng()
 
-    # Angulos ordenados para que el poligono sea "estrellado" (radial) y no se
-    # auto-intersecte; radios independientes por vertice -> mucha irregularidad.
-    angulos = np.sort(rng.uniform(0.0, 2.0 * np.pi, num_vertices))
-    radios = rng.uniform(radio_min, radio_max, num_vertices)
+    # Empezamos con una matriz vacia y colocamos algunas "semillas" (bloques o esferas)
+    # aleatorias cerca del centro.
+    volumen_crudo = np.zeros((tamano, tamano, tamano), dtype=float)
+    
+    num_semillas = int(rng.integers(5, 12))
+    for _ in range(num_semillas):
+        # Desviacion aleatoria desde el centro
+        dx = rng.uniform(-radio_base, radio_base)
+        dy = rng.uniform(-radio_base, radio_base)
+        dz = rng.uniform(-radio_base, radio_base)
+        r_semilla = rng.uniform(radio_base/4, radio_base)
+        
+        # Generar mascara de esta semilla
+        zz, yy, xx = np.ogrid[:tamano, :tamano, :tamano]
+        semilla_mask = (xx - (cx+dx))**2 + (yy - (cy+dy))**2 + (zz - (cz+dz))**2 <= r_semilla**2
+        volumen_crudo[semilla_mask] = 1.0
 
-    xs = cx + radios * np.cos(angulos)
-    ys = cy + radios * np.sin(angulos)
-
-    # Mascara dura del poligono (0/1) para poder filtrarla como imagen.
-    relleno = _mascara_desde_poligono(tamano, xs, ys).astype(float)
-
-    # Suavizado gaussiano de los bordes. sigma ~ 2% del tamano redondea las
-    # esquinas sin disolver la pieza.
+    # Suavizado gaussiano 3D para fundir las semillas en una sola masa organica
     if sigma is None:
-        sigma = tamano * 0.02
-    suavizada = gaussian_filter(relleno, sigma=sigma)
+        sigma = tamano * 0.04
+    suavizada = gaussian_filter(volumen_crudo, sigma=sigma)
 
-    # Se re-binariza en el nivel 0.5 (borde "medio" del difuminado).
-    return suavizada >= 0.5
+    # Re-binarizar
+    return suavizada >= 0.4
 
-
-def forma_aleatoria(tamano, centro=None, rng=None):
-    # Devuelve una forma impredecible: elige al azar un tipo y parametros.
-    # Con un rng sembrado el resultado es reproducible; sin semilla, cambia
-    # en cada llamada.
+def forma_aleatoria_3d(tamano, centro=None, rng=None):
     if rng is None:
         rng = np.random.default_rng()
 
-    cx, cy = _centro_por_defecto(tamano, centro)
-    centro = (cx, cy)
+    cx, cy, cz = _centro_por_defecto_3d(tamano, centro)
+    centro_3d = (cx, cy, cz)
 
-    tipo = rng.choice(
-        ["circulo", "elipse", "poligono_irregular", "estrella", "L", "T"]
-    )
+    tipo = rng.choice(["esfera", "elipsoide", "cilindro", "masa_irregular_3d", "L_3d"])
 
-    if tipo == "circulo":
-        return circulo(tamano, int(rng.integers(tamano // 8, tamano // 4)), centro)
-    if tipo == "elipse":
-        return elipse(
+    if tipo == "esfera":
+        return esfera(tamano, radio=int(rng.integers(tamano // 8, tamano // 3)), centro=centro_3d)
+    
+    if tipo == "elipsoide":
+        return elipsoide(
             tamano,
             radio_x=int(rng.integers(tamano // 6, tamano // 3)),
-            radio_y=int(rng.integers(tamano // 10, tamano // 5)),
-            angulo_rotacion=float(rng.uniform(0.0, 180.0)),
-            centro=centro,
+            radio_y=int(rng.integers(tamano // 10, tamano // 4)),
+            radio_z=int(rng.integers(tamano // 8, tamano // 3)),
+            centro=centro_3d
         )
-    if tipo == "poligono_irregular":
-        return poligono_irregular(
+        
+    if tipo == "cilindro":
+        return cilindro(
+            tamano, 
+            radio=int(rng.integers(tamano // 8, tamano // 4)), 
+            altura=int(rng.integers(tamano // 3, tamano // 1.5)), 
+            centro=centro_3d
+        )
+        
+    if tipo == "masa_irregular_3d":
+        return masa_irregular_3d(
             tamano,
-            num_vertices=int(rng.integers(7, 15)),
-            radio_min=tamano // 8,
-            radio_max=tamano // 4,
-            centro=centro,
-            rng=rng,
+            radio_base=tamano // 4,
+            centro=centro_3d,
+            rng=rng
         )
-    if tipo == "estrella":
-        return estrella(
-            tamano,
-            num_puntas=int(rng.integers(5, 9)),
-            radio_ext=tamano // 4,
-            radio_int=tamano // 9,
-            centro=centro,
+        
+    if tipo == "L_3d":
+        return forma_L_3d(
+            tamano, 
+            ancho=tamano // 3, 
+            alto=tamano // 3, 
+            prof=tamano // 4, 
+            grosor=tamano // 8, 
+            centro=centro_3d
         )
-    if tipo == "L":
-        return forma_L(tamano, tamano // 3, tamano // 3, tamano // 9, centro)
-    return forma_T(tamano, tamano // 3, tamano // 3, tamano // 9, centro)

@@ -11,13 +11,12 @@ from dash import dcc, html
 from config import ANGULOS_DEFAULT, MU_PIEZA, MU_FONDO
 
 OPCIONES_FORMA = [
-    {"label": "Circulo", "value": "circulo"},
-    {"label": "Elipse", "value": "elipse"},
-    {"label": "Poligono irregular", "value": "poligono_irregular"},
-    {"label": "Estrella", "value": "estrella"},
-    {"label": "Forma L", "value": "L"},
-    {"label": "Forma T", "value": "T"},
-    {"label": "Aleatoria", "value": "aleatoria"},
+    {"label": "Esfera", "value": "esfera"},
+        {"label": "Elipsoide", "value": "elipsoide"},
+        {"label": "Cilindro", "value": "cilindro"},
+        {"label": "Forma en L (3D)", "value": "L_3d"},
+        {"label": "Masa Irregular", "value": "masa_irregular_3d"},
+        {"label": "Aleatoria", "value": "aleatoria"},
 ]
 
 
@@ -41,7 +40,7 @@ def crear_controles():
                 dbc.Select(
                     id="dropdown-forma",
                     options=OPCIONES_FORMA,
-                    value="circulo",
+                    value="esfera",
                 ),
             ),
 
