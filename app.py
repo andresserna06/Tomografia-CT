@@ -22,6 +22,7 @@ import dash_bootstrap_components as dbc
 # --- Locales ---
 from ui.layout import crear_layout
 from ui.callbacks import registrar_callbacks
+from ui.callbacks_3d import registrar_callbacks_3d
 
 
 # Instancia de la app Dash.
@@ -40,6 +41,7 @@ app.title = "Simulador CT"
 # Layout y callbacks.
 app.layout = crear_layout()
 registrar_callbacks(app)
+registrar_callbacks_3d(app)
 
 
 if __name__ == "__main__":

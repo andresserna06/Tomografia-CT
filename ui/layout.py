@@ -11,6 +11,7 @@ from dash import dcc, html
 
 # --- Locales ---
 from ui.controls import crear_controles
+from ui.controls_3d import crear_controles_3d
 
 
 def _ticks():
@@ -34,6 +35,29 @@ def _visor(card_titulo, color_dot, meta_id, meta_inicial, graph_id, recon=False)
                 id=graph_id,
                 config={"displayModeBar": False, "responsive": True},
                 style={"height": "300px"},
+            ),
+        ],
+        className="viewer",
+    )
+    return html.Div([cabecera, visor], className="stage recon" if recon else "stage")
+
+
+def _visor3d(card_titulo, color_dot, meta_id, meta_inicial, graph_id, recon=False):
+    # Igual que _visor pero mas alto, para alojar la escena 3D (isosuperficie).
+    cabecera = html.Div(
+        [
+            html.Span([html.Span(className="badge-dot", style={"background": color_dot}), card_titulo], className="t"),
+            html.Span(meta_inicial, id=meta_id, className="m"),
+        ],
+        className="ct-card-h",
+    )
+    visor = html.Div(
+        [
+            _ticks(),
+            dcc.Graph(
+                id=graph_id,
+                config={"displayModeBar": False, "responsive": True},
+                style={"height": "400px"},
             ),
         ],
         className="viewer",
@@ -126,6 +150,62 @@ def _contenido_2d():
     return html.Div([controles, pipeline, validacion, nota])
 
 
+def _contenido_3d():
+    controles = crear_controles_3d()
+
+    # Pipeline 3D: phantom volumetrico -> (radon+iradon por corte) -> reconstruccion.
+    pipeline = html.Div(
+        [
+            _visor3d("Phantom 3D", "var(--text-soft)", "meta-vol-3d", "64³ vox", "graf-phantom-3d"),
+            _connector("radon × N", "corte a corte"),
+            _visor3d("Reconstruccion 3D", "var(--accent)", "meta-recon-3d", "— cortes", "graf-reconstruccion-3d", recon=True),
+        ],
+        className="pipeline-3d",
+    )
+
+    # Validacion: metricas del volumen + corte axial central + su sinograma.
+    validacion = html.Div(
+        [
+            html.Div(
+                [
+                    html.Div(
+                        [html.Span("Validacion del volumen", className="t"),
+                         html.Span("original vs reconstruido", className="m")],
+                        className="ct-card-h",
+                    ),
+                    html.Div(
+                        [
+                            _stat("rmse", "RMSE", "stat-rmse-3d", "—", "bar-rmse-3d", "10%"),
+                            _stat("ssim", "SSIM", "stat-ssim-3d", "—", "bar-ssim-3d", "0%"),
+                            _stat("psnr", "PSNR", "stat-psnr-3d", "—", "bar-psnr-3d", "0%"),
+                        ],
+                        className="metrics",
+                    ),
+                ],
+                className="ct-card",
+            ),
+            _visor("Corte axial", "var(--accent)", "meta-corte-3d", "z = 32", "graf-corte-3d", recon=True),
+            _visor("Sinograma del corte", "var(--hot)", "meta-sino-3d", "90 ang.", "graf-sino-3d"),
+        ],
+        className="validation-3d",
+    )
+
+    nota = html.Div(
+        [
+            html.Span("↳"),
+            html.Span(
+                ["El volumen se reconstruye ",
+                 html.Span("corte por corte", className="ct-mono"),
+                 ". La ", html.Span("distancia entre cortes", className="ct-mono"),
+                 " fija la resolucion axial: a mayor paso, el objeto se ve escalonado en Z."]
+            ),
+        ],
+        className="note-foot",
+    )
+
+    return html.Div([controles, pipeline, validacion, nota])
+
+
 def _placeholder(icono, titulo, texto):
     return html.Div(
         [
@@ -198,13 +278,14 @@ def crear_layout():
                             children=_contenido_2d()),
                     dcc.Tab(label="02  Modo 3D", value="tab-3d",
                             className="ct-tab", selected_className="ct-tab--sel",
-                            children=_placeholder("\u25c9", "Modo 3D volumetrico",
-                                                  "Reconstruccion rebanada por rebanada. Objetivo 4.")),
+                            children=_contenido_3d()),
                 ],
             ),
 
             dcc.Store(id="store-seed", data=0),
             dcc.Store(id="store-token", data=0),
+            dcc.Store(id="store-seed-3d", data=0),
+            dcc.Store(id="store-token-3d", data=0),
         ],
         fluid=True,
         className="ct-app",

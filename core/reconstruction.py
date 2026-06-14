@@ -14,12 +14,17 @@ def reconstruir_fbp(
     sinograma: np.ndarray,
     angulos: np.ndarray,
     filtro: str = "ramp-filter",
+    tamano_salida: int | None = None,
 ) -> np.ndarray:
     # Reconstruye la imagen mediante retroproyeccion filtrada.
     #
-    # sinograma : proyecciones (posicion_detector x angulos).
-    # angulos   : angulos de cada proyeccion (en grados).
-    # filtro    : nombre del filtro de reconstruccion.
+    # sinograma     : proyecciones (posicion_detector x angulos).
+    # angulos       : angulos de cada proyeccion (en grados).
+    # filtro        : nombre del filtro de reconstruccion.
+    # tamano_salida : lado (en px) de la imagen reconstruida. Si es None, iradon
+    #                 lo deduce del sinograma. Forzarlo es util en 3D, donde cada
+    #                 corte reconstruido debe conservar el lado N exacto del
+    #                 volumen para poder apilarse sin desajustes de tamano.
     #
     # Retorna un ndarray 2D con la imagen reconstruida.
 
@@ -32,6 +37,7 @@ def reconstruir_fbp(
         theta=angulos,
         filter_name=filtro_skimage,
         circle=False,
+        output_size=tamano_salida,
     )
 
     return reconstruccion
