@@ -54,10 +54,14 @@ def reconstruir_volumen(
         # reconstruido encaje exactamente al apilarlo.
         corte_recon = reconstruir_fbp(sinograma, angulos, tamano_salida=n)
 
-        # "Escalon visible": el corte reconstruido representa toda su rebanada de
-        # grosor 'paso'. Se repite hacia abajo hasta el siguiente corte muestreado
-        # (retencion de orden cero), produciendo el escalonado en Z.
-        z_fin = min(z + paso, n)
-        reconstruccion[z:z_fin] = corte_recon
+        # [MODIFICACIÓN]
+        # Para dejar los espacios completamente vacíos y ver los cortes separados, 
+        # asignamos la reconstrucción ÚNICAMENTE a su posición 'z'. 
+        # Como inicializamos la matriz con np.zeros_like, el resto quedará vacío.
+        reconstruccion[z] = corte_recon
+        
+        # (Las siguientes líneas quedarían eliminadas o comentadas)
+        # z_fin = min(z + paso, n)
+        # reconstruccion[z:z_fin] = corte_recon
 
     return reconstruccion, indices
