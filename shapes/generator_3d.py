@@ -95,40 +95,58 @@ def toroide(tamano, radio_mayor, radio_menor, centro=None):
 
 
 def forma_aleatoria_3d(tamano, centro=None, rng=None):
-    # Devuelve una forma 3D impredecible: elige al azar un tipo y sus parametros.
-    # Con un rng sembrado el resultado es reproducible; sin semilla, cambia en
-    # cada llamada.
+    # Genera una máscara booleana 3D de una pieza amorfa e impredecible mediante
+    # la técnica de Metaballs Asimétricas con umbral variable (Irregularidad Multinivel).
     if rng is None:
         rng = np.random.default_rng()
 
-    cx, cy, cz = _centro_por_defecto(tamano, centro)
-    centro = (cx, cy, cz)
+    # Centro y malla base (coherencia volumen[z, y, x])
+    cx_base, cy_base, cz_base = _centro_por_defecto(tamano, centro)
+    zz, yy, xx = _malla(tamano)
 
-    tipo = rng.choice(["esfera", "elipsoide", "cilindro", "prisma", "toroide"])
+    # Lienzo acumulador
+    campo_potencial = np.zeros((tamano, tamano, tamano), dtype=float)
 
-    if tipo == "esfera":
-        return esfera(tamano, int(rng.integers(tamano // 8, tamano // 4)), centro)
-    if tipo == "elipsoide":
-        return elipsoide(
-            tamano,
-            radio_x=int(rng.integers(tamano // 6, tamano // 3)),
-            radio_y=int(rng.integers(tamano // 8, tamano // 4)),
-            radio_z=int(rng.integers(tamano // 10, tamano // 5)),
-            centro=centro,
-        )
-    if tipo == "cilindro":
-        return cilindro(
-            tamano,
-            radio=int(rng.integers(tamano // 8, tamano // 4)),
-            altura=int(rng.integers(tamano // 3, tamano // 2)),
-            centro=centro,
-        )
-    if tipo == "prisma":
-        lado = int(rng.integers(tamano // 5, tamano // 3))
-        return prisma(tamano, lado, lado, lado, centro)
-    return toroide(
-        tamano,
-        radio_mayor=int(rng.integers(tamano // 5, tamano // 4)),
-        radio_menor=int(rng.integers(tamano // 12, tamano // 8)),
-        centro=centro,
+    # Nivel 1: Mayor dispersión y número variable de sub-burbujas
+    num_blobs = int(rng.integers(5, 12))  # Más burbujas para mayor complejidad
+
+    for _ in range(num_blobs):
+        # Aumentamos el rango de dispersión de los sub-centros
+        disp = tamano // 4
+        cx = cx_base + rng.integers(-disp, disp + 1)
+        cy = cy_base + rng.integers(-disp, disp + 1)
+        cz = cz_base + rng.integers(-disp, disp + 1)
+
+        # Radio base de la burbuja
+        r = rng.uniform(tamano // 12, tamano // 5)
+
+        # --- Nivel 2: Asimetría Direccional ---
+        # En lugar de una esfera perfecta, cada burbuja será una elipse
+        # deformada aleatoriamente en X, Y y Z. Esto rompe la forma de "huevo".
+        escala_x = rng.uniform(0.5, 1.8)
+        escala_y = rng.uniform(0.5, 1.8)
+        escala_z = rng.uniform(0.5, 1.8)
+
+        # Distancia elíptica al cuadrado
+        dist_deforme = (((xx - cx) * escala_x) ** 2 +
+                        ((yy - cy) * escala_y) ** 2 +
+                        ((zz - cz) * escala_z) ** 2)
+
+        campo_potencial += np.exp(-dist_deforme / (r ** 2))
+
+    # --- Nivel 3: Variación de Superficie Amórfica ---
+    # Para que la Isosuperficie no sea un contorno liso, introducimos un
+    # "ruido" de variación espacial muy básico pero efectivo que
+    # deforma la superficie externa de la masa de forma impredecible.
+    variacion_ruido = 1.0 + 0.3 * (
+        np.sin(2.0 * np.pi * (xx - cx_base) / tamano) *
+        np.cos(2.0 * np.pi * (yy - cy_base) / tamano) *
+        np.sin(2.0 * np.pi * (zz - cz_base) / tamano)
     )
+    
+    campo_potencial *= variacion_ruido
+
+    # Definimos la superficie (Isosuperficie).
+    # Como el campo ahora es mucho más irregular, un umbral más bajo
+    # permite que se formen estructuras alargadas o puentes asimétricos.
+    return campo_potencial > 0.15

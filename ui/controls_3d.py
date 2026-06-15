@@ -64,6 +64,16 @@ def crear_controles_3d():
                 ),
             ),
 
+            # --- [NUEVO] Continuidad Z: Unir cortes o mostrarlos separados ---
+            _campo(
+                "Eje Z (Visualización)",
+                dbc.Switch(
+                    id="switch-unir-3d", 
+                    label="Unir rebanadas", 
+                    value=True
+                ),
+            ),
+
             # --- mu pieza (track ambar via .hot) ---
             _campo(
                 [html.Span("μ", className="mu"), " pieza"],

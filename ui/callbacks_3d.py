@@ -9,7 +9,7 @@
 # --- Terceros ---
 import numpy as np
 import plotly.graph_objects as go
-from dash import Input, Output, ctx, no_update
+from dash import Input, Output, State, ctx, no_update
 
 # --- Locales ---
 from config import TAMANO_VOLUMEN
@@ -19,7 +19,8 @@ from core.acquisition import generar_sinograma
 from core.metrics import calcular_metricas
 
 
-_CACHE_3D = {"volumen": None, "version": 0}
+# Extendemos el caché para guardar también la reconstrucción actual
+_CACHE_3D = {"volumen": None, "reconstruccion": None, "version": 0}
 
 # Colores (coherentes con el perfil de corte del Modo 2D).
 _COLOR_PIEZA = "#9aa4b4"   # phantom original (gris suave)
@@ -63,32 +64,64 @@ def _nivel_iso(volumen):
 
 
 def _figura_volumen(volumen, color, mostrar_pieza=True) -> go.Figure:
-    # Renderiza el volumen como una isosuperficie dentro de la caja contenedora.
-    # La caja (aristas) se dibuja SIEMPRE; la pieza solo si mostrar_pieza=True
-    # (en el modo oculto la pieza se esconde y queda visible solo la caja).
     n = volumen.shape[0]
     trazas = []
 
     if mostrar_pieza:
-        # Mallas de coordenadas en el MISMO orden de ejes que el volumen
-        # (eje 0 = z, eje 1 = y, eje 2 = x), para que cada valor case con su
-        # posicion al aplanar.
+        # 1. Creamos las mallas de coordenadas planas en el orden correcto
         zz, yy, xx = np.mgrid[0:n, 0:n, 0:n]
+        
+        # Aplanamos las matrices para Plotly
+        x_flat = xx.flatten()
+        y_flat = yy.flatten()
+        z_flat = zz.flatten()
+        v_flat = volumen.flatten()
+        
         iso = _nivel_iso(volumen)
+        
+        # 2. TRAZA VISUAL: La Isosuperficie (Se queda igual, pero desactivamos su hover problemático)
         trazas.append(
             go.Isosurface(
-                x=xx.flatten(), y=yy.flatten(), z=zz.flatten(),
-                value=volumen.flatten(),
+                x=x_flat, y=y_flat, z=z_flat,
+                value=v_flat,
                 isomin=iso, isomax=float(volumen.max()),
                 surface_count=1,
                 colorscale=[[0, color], [1, color]],
                 showscale=False,
                 opacity=0.9,
                 caps=dict(x_show=False, y_show=False, z_show=False),
+                hoverinfo="skip",  # Dejamos que la colisión la maneje el Scatter3d
+            )
+        )
+        
+        # 3. [NUEVO] COLCHÓN DE CLICS: Traza oculta de alta sensibilidad
+        # Filtramos para colocar puntos interactivos únicamente donde la pieza es sólida
+        mascara_solida = v_flat >= iso
+        
+        trazas.append(
+            go.Scatter3d(
+                x=x_flat[mascara_solida],
+                y=y_flat[mascara_solida],
+                z=z_flat[mascara_solida],
+                mode="markers",
+                marker=dict(
+                    size=14,              # ¡Marcadores gigantes para que sea imposible fallar el disparo!
+                    opacity=0.0,          # Completamente invisibles al ojo humano
+                    color=color
+                ),
+                # Guardamos la Z real en el hover text para el callback de clic
+                text=[f"{z}" for z in z_flat[mascara_solida]],
+                hoverinfo="text",
+                hoverlabel=dict(
+                    bgcolor="rgba(30, 41, 59, 0.85)",
+                    font_size=13,
+                    font_color="white"
+                ),
+                showlegend=False
             )
         )
 
-    # Caja contenedora (wireframe).
+    # Caja contenedora (wireframe)
     cx, cy, cz = _aristas_caja(n)
     trazas.append(
         go.Scatter3d(
@@ -210,8 +243,9 @@ def registrar_callbacks_3d(app):
         Input("store-token-3d", "data"),
         Input("slider-angulos-3d", "value"),
         Input("slider-paso", "value"),
+        Input("switch-unir-3d", "value"), 
     )
-    def _actualizar_reconstruccion_3d(_token, num_angulos, paso):
+    def _actualizar_reconstruccion_3d(_token, num_angulos, paso, unir_cortes):
         volumen = _CACHE_3D["volumen"]
         if volumen is None:
             return (no_update,) * 12
@@ -219,10 +253,12 @@ def registrar_callbacks_3d(app):
         n = volumen.shape[0]
 
         # Reconstruccion corte por corte con el paso indicado.
-        reconstruccion, indices = reconstruir_volumen(volumen, num_angulos, paso)
+        reconstruccion, indices = reconstruir_volumen(volumen, num_angulos, paso, unir_cortes=unir_cortes)
+        
+        # [NUEVO] Guardamos el volumen reconstruido en el caché global para usarlo en los clics
+        _CACHE_3D["reconstruccion"] = reconstruccion
 
-        # Corte axial central (la rebanada reconstruida en z = n/2) y el sinograma
-        # de ese mismo corte original, para visualizar el pipeline 2D subyacente.
+        # Por defecto, al recalcular todo, mostramos el corte axial central z = n/2
         z_centro = n // 2
         corte_recon = reconstruccion[z_centro]
         sinograma, _ = generar_sinograma(volumen[z_centro], num_angulos)
@@ -231,14 +267,13 @@ def registrar_callbacks_3d(app):
         fig_corte = _figura_heatmap(corte_recon, "gray")
         fig_sino = _figura_heatmap(sinograma, "hot")
 
-        # Metricas sobre TODO el volumen: asi el paso entre cortes (resolucion
-        # axial) tambien impacta la calidad medida, no solo la del plano.
+        # Metricas sobre TODO el volumen
         m = calcular_metricas(volumen, reconstruccion)
         rmse_txt = f"{m['rmse']:.3f}"
         ssim_txt = f"{m['ssim']:.2f}"
         psnr_txt = f"{m['psnr']:.1f}"
 
-        # Anchos de las barras (0-100%). RMSE: menor es mejor -> se invierte.
+        # Anchos de las barras (0-100%).
         w_rmse = max(4, min(100, (1 - min(m["rmse"], 0.3) / 0.3) * 100))
         w_ssim = max(0, min(100, m["ssim"] * 100))
         w_psnr = max(0, min(100, m["psnr"] / 40 * 100))
@@ -253,3 +288,40 @@ def registrar_callbacks_3d(app):
             f"z = {z_centro}",
             f"{num_angulos} ang.",
         )
+
+    # 5) [NUEVO CALLBACK] Interacción: Clic en el volumen 3D muestra la rebanada 2D
+    @app.callback(
+        Output("graf-corte-3d", "figure", allow_duplicate=True),
+        Output("meta-corte-3d", "children", allow_duplicate=True),
+        Input("graf-reconstruccion-3d", "clickData"),
+        prevent_initial_call=True,
+    )
+    def _mostrar_corte_por_clic(clickData):
+        # Si no hay interacciones válidas o el caché está vacío, no actualizamos
+        if not clickData or _CACHE_3D["reconstruccion"] is None:
+            return no_update, no_update
+
+        try:
+            # Extraemos el punto de intersección tridimensional capturado por Plotly
+            punto = clickData["points"][0]
+            z_clicado = punto.get("z", None)
+
+            if z_clicado is None:
+                return no_update, no_update
+
+            # Convertimos la coordenada flotante continua en el índice entero de la matriz
+            z_index = int(round(z_clicado))
+            n = _CACHE_3D["reconstruccion"].shape[0]
+            z_index = max(0, min(z_index, n - 1))  # Control de fronteras seguro
+
+            # Extraemos la capa axial exacta desde el volumen reconstruido en caché
+            corte_seleccionado = _CACHE_3D["reconstruccion"][z_index]
+            
+            # Construimos el heatmap limpio y actualizamos el string de metadata
+            fig_corte = _figura_heatmap(corte_seleccionado, "gray")
+            meta_txt = f"z = {z_index} (Seleccionado)"
+
+            return fig_corte, meta_txt
+
+        except Exception:
+            return no_update, no_update
