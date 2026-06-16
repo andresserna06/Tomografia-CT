@@ -17,7 +17,7 @@ from config import TAMANO_IMAGEN
 from core.phantom import crear_phantom
 from core.acquisition import generar_sinograma
 from core.reconstruction import reconstruir_fbp
-from core.metrics import calcular_metricas
+from core.metrics import cuantificar_forma, clasificar_metrica
 
 
 _CACHE = {"phantom": None, "version": 0}
@@ -71,21 +71,38 @@ def registrar_callbacks(app):
     def _nueva_semilla(_forma, _n_generar):
         return int(np.random.randint(0, 2**31 - 1))
 
-    # 2) Phantom: se recalcula al cambiar forma, mu o semilla. Lo cachea y
-    #    publica un token para disparar la reconstruccion.
+    # 1b) Posicion de la pieza (aleatoria = escondida). Se desacopla del switch
+    #     para lograr "revelar en el sitio" (mismo patron que en 3D):
+    #       - Activar el switch (ON)  -> posicion ALEATORIA: arranca el reto.
+    #       - Apagar el switch (OFF)  -> NO se toca la posicion (no_update): la
+    #         pieza se revela exactamente donde estaba, sin volver al centro.
+    #       - Generar nueva / cambiar forma -> la posicion sigue al switch actual.
+    @app.callback(
+        Output("store-pos", "data"),
+        Input("switch-oculto", "value"),
+        Input("btn-generar", "n_clicks"),
+        Input("dropdown-forma", "value"),
+    )
+    def _posicion_pieza(oculto, _n_generar, _forma):
+        if ctx.triggered_id == "switch-oculto":
+            return True if oculto else no_update
+        return bool(oculto)
+
+    # 2) Phantom: se recalcula al cambiar forma, mu, posicion o semilla. Lo cachea
+    #    y publica un token para disparar la reconstruccion.
     @app.callback(
         Output("store-token", "data"),
         Output("graf-phantom", "figure"),
         Input("dropdown-forma", "value"),
         Input("slider-mu-pieza", "value"),
         Input("slider-mu-fondo", "value"),
-        Input("switch-oculto", "value"),
+        Input("store-pos", "data"),
         Input("store-seed", "data"),
     )
-    def _actualizar_phantom(forma, mu_pieza, mu_fondo, oculto, semilla):
+    def _actualizar_phantom(forma, mu_pieza, mu_fondo, pos_aleatoria, semilla):
         phantom = crear_phantom(
             TAMANO_IMAGEN, forma=forma, mu_fondo=mu_fondo, mu_pieza=mu_pieza,
-            posicion_aleatoria=bool(oculto), semilla=semilla,
+            posicion_aleatoria=bool(pos_aleatoria), semilla=semilla,
         )
         _CACHE["phantom"] = phantom
         _CACHE["version"] += 1
@@ -97,12 +114,18 @@ def registrar_callbacks(app):
         Output("graf-sinograma", "figure"),
         Output("graf-reconstruccion", "figure"),
         Output("graf-perfil", "figure"),
-        Output("stat-rmse", "children"),
-        Output("stat-ssim", "children"),
-        Output("stat-psnr", "children"),
-        Output("bar-rmse", "style"),
-        Output("bar-ssim", "style"),
-        Output("bar-psnr", "style"),
+        Output("stat-dice", "children"),
+        Output("stat-iou", "children"),
+        Output("stat-area", "children"),
+        Output("bar-dice", "style"),
+        Output("bar-iou", "style"),
+        Output("bar-area", "style"),
+        Output("verdict-dice", "children"),
+        Output("verdict-dice", "className"),
+        Output("verdict-iou", "children"),
+        Output("verdict-iou", "className"),
+        Output("verdict-area", "children"),
+        Output("verdict-area", "className"),
         Output("meta-sino", "children"),
         Input("store-token", "data"),
         Input("slider-angulos", "value"),
@@ -110,7 +133,7 @@ def registrar_callbacks(app):
     def _actualizar_reconstruccion(_token, num_angulos):
         phantom = _CACHE["phantom"]
         if phantom is None:
-            return (no_update,) * 10
+            return (no_update,) * 16
 
         sinograma, angulos = generar_sinograma(phantom, num_angulos)
         reconstruccion = reconstruir_fbp(sinograma, angulos)
@@ -119,36 +142,42 @@ def registrar_callbacks(app):
         fig_recon = _figura_visor(reconstruccion, "gray")
         fig_perfil = _figura_perfil(phantom, reconstruccion)
 
-        m = calcular_metricas(phantom, reconstruccion)
-        rmse_txt = f"{m['rmse']:.3f}"
-        ssim_txt = f"{m['ssim']:.2f}"
-        psnr_txt = f"{m['psnr']:.1f}"
+        # Cuantificacion de la forma: solapamiento de siluetas (no intensidades).
+        m = cuantificar_forma(phantom, reconstruccion)
+        dice_txt = f"{m['dice']:.2f}"
+        iou_txt = f"{m['iou']:.2f}"
+        area_txt = f"{m['area']:.0f}%"
 
-        # Anchos de las barras (0-100%). RMSE: menor es mejor -> se invierte.
-        w_rmse = max(4, min(100, (1 - min(m["rmse"], 0.3) / 0.3) * 100))
-        w_ssim = max(0, min(100, m["ssim"] * 100))
-        w_psnr = max(0, min(100, m["psnr"] / 40 * 100))
+        # Veredicto cualitativo (Buena/Aceptable/Pobre) + clase de color por metrica.
+        dice_lbl, dice_cls = clasificar_metrica("dice", m["dice"])
+        iou_lbl, iou_cls = clasificar_metrica("iou", m["iou"])
+        area_lbl, area_cls = clasificar_metrica("area", m["area"])
+
+        # Anchos de las barras (0-100%, lleno = mejor). Dice/IoU son ya [0,1];
+        # el error de area se invierte (0% -> barra llena, >=50% -> vacia).
+        w_dice = max(4, min(100, m["dice"] * 100))
+        w_iou = max(4, min(100, m["iou"] * 100))
+        w_area = max(4, min(100, (1 - min(m["area"], 50.0) / 50.0) * 100))
 
         return (
             fig_sino, fig_recon, fig_perfil,
-            rmse_txt, ssim_txt, psnr_txt,
-            {"width": f"{w_rmse:.0f}%"},
-            {"width": f"{w_ssim:.0f}%"},
-            {"width": f"{w_psnr:.0f}%"},
+            dice_txt, iou_txt, area_txt,
+            {"width": f"{w_dice:.0f}%"},
+            {"width": f"{w_iou:.0f}%"},
+            {"width": f"{w_area:.0f}%"},
+            dice_lbl, f"verdict {dice_cls}",
+            iou_lbl, f"verdict {iou_cls}",
+            area_lbl, f"verdict {area_cls}",
             f"{num_angulos} ang.",
         )
 
-    # 4) Visibilidad del phantom (modo oculto).
+    # 4) Visibilidad del phantom (modo oculto). El switch controla todo:
+    #    ON -> se oculta la grafica; OFF -> se muestra. Como apagar el switch NO
+    #    regenera la posicion (callback 1b), la pieza se revela en su sitio real.
     @app.callback(
         Output("graf-phantom", "style"),
         Input("switch-oculto", "value"),
-        Input("btn-revelar", "n_clicks"),
-        Input("btn-generar", "n_clicks"),
     )
-    def _visibilidad_phantom(oculto, _n_revelar, _n_generar):
+    def _visibilidad_phantom(oculto):
         base = {"height": "300px"}
-        if not oculto:
-            return {**base, "display": "block"}
-        if ctx.triggered_id == "btn-revelar":
-            return {**base, "display": "block"}
-        return {**base, "display": "none"}
+        return {**base, "display": "none" if oculto else "block"}

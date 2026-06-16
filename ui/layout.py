@@ -72,12 +72,61 @@ def _connector(op, desc):
     )
 
 
-def _stat(clase, k, valor_id, valor_inicial, bar_id, ancho_inicial):
+# Texto fijo de cada metrica (nombre completo, direccion, valor ideal y una
+# explicacion en lenguaje simple). Se centraliza para que 2D y 3D sean identicos.
+_METRICAS = {
+    "dice": {
+        "k": "DICE",
+        "nombre": "Coeficiente de Dice",
+        "dir": "↑ mayor es mejor",
+        "ideal": "ideal: 1",
+        "desc": "Solapamiento entre la silueta real y la reconstruida (1 = idénticas).",
+    },
+    "iou": {
+        "k": "IoU",
+        "nombre": "Intersección sobre unión",
+        "dir": "↑ mayor es mejor",
+        "ideal": "ideal: 1",
+        "desc": "Área común dividida por el área total cubierta. Más estricto que Dice.",
+    },
+    "area": {
+        "k": "ÁREA",
+        "nombre": "Error de área",
+        "dir": "↓ menor es mejor",
+        "ideal": "ideal: 0 %",
+        "desc": "Cuánto se desvía el tamaño de la pieza reconstruida frente al real.",
+    },
+}
+
+
+def _stat(clase, valor_id, valor_inicial, bar_id, ancho_inicial, verdict_id):
+    # Tarjeta explicada de una metrica: cabecera (acronimo + direccion), nombre
+    # completo, valor + veredicto cualitativo, barra de calidad + valor ideal,
+    # y una frase descriptiva. El valor, el veredicto y el ancho de la barra los
+    # rellenan los callbacks; el resto es texto fijo tomado de _METRICAS.
+    meta = _METRICAS[clase]
     return html.Div(
         [
-            html.Div(k, className="k"),
-            html.Div(valor_inicial, id=valor_id, className="val"),
-            html.Div(html.I(id=bar_id, style={"width": ancho_inicial}), className="bar"),
+            html.Div(
+                [html.Span(meta["k"], className="k"), html.Span(meta["dir"], className="dir")],
+                className="stat-head",
+            ),
+            html.Div(meta["nombre"], className="stat-name"),
+            html.Div(
+                [
+                    html.Span(valor_inicial, id=valor_id, className="val"),
+                    html.Span("—", id=verdict_id, className="verdict"),
+                ],
+                className="stat-valrow",
+            ),
+            html.Div(
+                [
+                    html.Div(html.I(id=bar_id, style={"width": ancho_inicial}), className="bar"),
+                    html.Span(meta["ideal"], className="ideal"),
+                ],
+                className="stat-barrow",
+            ),
+            html.Div(meta["desc"], className="stat-desc"),
         ],
         className=f"stat {clase}",
     )
@@ -102,15 +151,15 @@ def _contenido_2d():
             html.Div(
                 [
                     html.Div(
-                        [html.Span("Validacion de la reconstruccion", className="t"),
-                         html.Span("original vs reconstruida", className="m")],
+                        [html.Span("Cuantificacion de la forma", className="t"),
+                         html.Span("silueta real vs reconstruida", className="m")],
                         className="ct-card-h",
                     ),
                     html.Div(
                         [
-                            _stat("rmse", "RMSE", "stat-rmse", "—", "bar-rmse", "10%"),
-                            _stat("ssim", "SSIM", "stat-ssim", "—", "bar-ssim", "0%"),
-                            _stat("psnr", "PSNR", "stat-psnr", "—", "bar-psnr", "0%"),
+                            _stat("dice", "stat-dice", "—", "bar-dice", "0%", "verdict-dice"),
+                            _stat("iou", "stat-iou", "—", "bar-iou", "0%", "verdict-iou"),
+                            _stat("area", "stat-area", "—", "bar-area", "0%", "verdict-area"),
                         ],
                         className="metrics",
                     ),
@@ -163,29 +212,36 @@ def _contenido_3d():
         className="pipeline-3d",
     )
 
-    # Validacion: metricas del volumen + corte axial central + su sinograma.
+    # Validacion: metricas del volumen (fila ancha arriba) + corte axial central
+    # y su sinograma (fila de visores abajo). Antes iban los tres en una sola fila
+    # de 3 columnas y quedaban amontonados; ahora cada bloque respira.
     validacion = html.Div(
         [
             html.Div(
                 [
                     html.Div(
-                        [html.Span("Validacion del volumen", className="t"),
-                         html.Span("original vs reconstruido", className="m")],
+                        [html.Span("Cuantificacion de la forma", className="t"),
+                         html.Span("volumen real vs reconstruido", className="m")],
                         className="ct-card-h",
                     ),
                     html.Div(
                         [
-                            _stat("rmse", "RMSE", "stat-rmse-3d", "—", "bar-rmse-3d", "10%"),
-                            _stat("ssim", "SSIM", "stat-ssim-3d", "—", "bar-ssim-3d", "0%"),
-                            _stat("psnr", "PSNR", "stat-psnr-3d", "—", "bar-psnr-3d", "0%"),
+                            _stat("dice", "stat-dice-3d", "—", "bar-dice-3d", "0%", "verdict-dice-3d"),
+                            _stat("iou", "stat-iou-3d", "—", "bar-iou-3d", "0%", "verdict-iou-3d"),
+                            _stat("area", "stat-area-3d", "—", "bar-area-3d", "0%", "verdict-area-3d"),
                         ],
                         className="metrics",
                     ),
                 ],
                 className="ct-card",
             ),
-            _visor("Corte axial", "var(--accent)", "meta-corte-3d", "z = 32", "graf-corte-3d", recon=True),
-            _visor("Sinograma del corte", "var(--hot)", "meta-sino-3d", "90 ang.", "graf-sino-3d"),
+            html.Div(
+                [
+                    _visor("Corte axial", "var(--accent)", "meta-corte-3d", "z = 32", "graf-corte-3d", recon=True),
+                    _visor("Sinograma del corte", "var(--hot)", "meta-sino-3d", "90 ang.", "graf-sino-3d"),
+                ],
+                className="vis-3d-row",
+            ),
         ],
         className="validation-3d",
     )
@@ -284,8 +340,14 @@ def crear_layout():
 
             dcc.Store(id="store-seed", data=0),
             dcc.Store(id="store-token", data=0),
+            # ¿La pieza 2D va en posicion aleatoria (escondida)? Se desacopla del
+            # switch para poder "revelar en el sitio" sin regenerar la posicion.
+            dcc.Store(id="store-pos", data=False),
             dcc.Store(id="store-seed-3d", data=0),
             dcc.Store(id="store-token-3d", data=0),
+            # ¿La pieza 3D va en posicion aleatoria (escondida)? Se desacopla del
+            # switch para poder "revelar en el sitio" sin regenerar la posicion.
+            dcc.Store(id="store-pos-3d", data=False),
         ],
         fluid=True,
         className="ct-app",

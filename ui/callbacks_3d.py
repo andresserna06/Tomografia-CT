@@ -16,7 +16,7 @@ from config import TAMANO_VOLUMEN
 from core.phantom_3d import crear_phantom_3d
 from core.reconstruction_3d import reconstruir_volumen
 from core.acquisition import generar_sinograma
-from core.metrics import calcular_metricas
+from core.metrics import cuantificar_forma, clasificar_metrica
 
 
 # Extendemos el caché para guardar también la reconstrucción actual
@@ -177,47 +177,62 @@ def registrar_callbacks_3d(app):
     def _nueva_semilla_3d(_forma, _n_generar):
         return int(np.random.randint(0, 2**31 - 1))
 
-    # 2) Volumen: se recalcula al cambiar forma, mu o semilla. Lo cachea en el
-    #    servidor y publica un token para disparar la reconstruccion. NO emite la
-    #    figura del phantom aqui: de eso se encarga el callback 3 (visibilidad).
+    # 1b) Posicion de la pieza (aleatoria = escondida). Se desacopla del switch
+    #     para lograr "revelar en el sitio":
+    #       - Activar el switch (ON)  -> posicion ALEATORIA: arranca el reto.
+    #       - Apagar el switch (OFF)  -> NO se toca la posicion (no_update): la
+    #         pieza ya esta donde estaba, solo cambia su visibilidad. Asi se
+    #         revela exactamente en su sitio real, sin volver al centro.
+    #       - Generar nueva / cambiar forma -> la posicion sigue al switch actual.
+    @app.callback(
+        Output("store-pos-3d", "data"),
+        Input("switch-oculto-3d", "value"),
+        Input("btn-generar-3d", "n_clicks"),
+        Input("dropdown-forma-3d", "value"),
+    )
+    def _posicion_pieza_3d(oculto, _n_generar, _forma):
+        if ctx.triggered_id == "switch-oculto-3d":
+            # ON -> aleatoria; OFF -> conservar (revelar en su sitio).
+            return True if oculto else no_update
+        # Generar nueva o cambiar forma: respeta el estado actual del switch.
+        return bool(oculto)
+
+    # 2) Volumen: se recalcula al cambiar forma, mu, posicion o semilla. Lo cachea
+    #    en el servidor y publica un token para disparar la reconstruccion. NO emite
+    #    la figura del phantom aqui: de eso se encarga el callback 3 (visibilidad).
     @app.callback(
         Output("store-token-3d", "data"),
         Input("dropdown-forma-3d", "value"),
         Input("slider-mu-pieza-3d", "value"),
         Input("slider-mu-fondo-3d", "value"),
-        Input("switch-oculto-3d", "value"),
+        Input("store-pos-3d", "data"),
         Input("store-seed-3d", "data"),
     )
-    def _actualizar_volumen(forma, mu_pieza, mu_fondo, oculto, semilla):
+    def _actualizar_volumen(forma, mu_pieza, mu_fondo, pos_aleatoria, semilla):
         volumen = crear_phantom_3d(
             TAMANO_VOLUMEN, forma=forma, mu_fondo=mu_fondo, mu_pieza=mu_pieza,
-            posicion_aleatoria=bool(oculto), semilla=semilla,
+            posicion_aleatoria=bool(pos_aleatoria), semilla=semilla,
         )
         _CACHE_3D["volumen"] = volumen
         _CACHE_3D["version"] += 1
         return _CACHE_3D["version"]
 
-    # 3) Figura del phantom 3D + modo oculto. Construye la isosuperficie desde el
-    #    volumen cacheado. En modo oculto se muestra solo la caja; "Revelar"
-    #    destapa la pieza. Misma logica de disparo que el modo oculto 2D.
+    # 3) Figura del phantom 3D. El SWITCH controla solo la visibilidad:
+    #       ON  -> muestra solo la caja (pieza escondida en su posicion aleatoria).
+    #       OFF -> revela la pieza. Como el volumen NO se regenero al apagar
+    #              (callback 1b devolvio no_update), la pieza aparece en su sitio real.
     @app.callback(
         Output("graf-phantom-3d", "figure"),
         Output("meta-vol-3d", "children"),
         Input("store-token-3d", "data"),
         Input("switch-oculto-3d", "value"),
-        Input("btn-revelar-3d", "n_clicks"),
-        Input("btn-generar-3d", "n_clicks"),
     )
-    def _figura_phantom_3d(_token, oculto, _n_revelar, _n_generar):
+    def _figura_phantom_3d(_token, oculto):
         volumen = _CACHE_3D["volumen"]
         if volumen is None:
             return no_update, no_update
 
-        # En modo oculto la pieza queda escondida, salvo que se acabe de pulsar
-        # "Revelar".
-        mostrar = True
-        if oculto:
-            mostrar = ctx.triggered_id == "btn-revelar-3d"
+        mostrar = not bool(oculto)
 
         n = volumen.shape[0]
         fig = _figura_volumen(volumen, _COLOR_PIEZA, mostrar_pieza=mostrar)
@@ -231,24 +246,30 @@ def registrar_callbacks_3d(app):
         Output("graf-reconstruccion-3d", "figure"),
         Output("graf-corte-3d", "figure"),
         Output("graf-sino-3d", "figure"),
-        Output("stat-rmse-3d", "children"),
-        Output("stat-ssim-3d", "children"),
-        Output("stat-psnr-3d", "children"),
-        Output("bar-rmse-3d", "style"),
-        Output("bar-ssim-3d", "style"),
-        Output("bar-psnr-3d", "style"),
+        Output("stat-dice-3d", "children"),
+        Output("stat-iou-3d", "children"),
+        Output("stat-area-3d", "children"),
+        Output("bar-dice-3d", "style"),
+        Output("bar-iou-3d", "style"),
+        Output("bar-area-3d", "style"),
+        Output("verdict-dice-3d", "children"),
+        Output("verdict-dice-3d", "className"),
+        Output("verdict-iou-3d", "children"),
+        Output("verdict-iou-3d", "className"),
+        Output("verdict-area-3d", "children"),
+        Output("verdict-area-3d", "className"),
         Output("meta-recon-3d", "children"),
         Output("meta-corte-3d", "children"),
         Output("meta-sino-3d", "children"),
         Input("store-token-3d", "data"),
         Input("slider-angulos-3d", "value"),
         Input("slider-paso", "value"),
-        Input("switch-unir-3d", "value"), 
+        Input("switch-unir-3d", "value"),
     )
     def _actualizar_reconstruccion_3d(_token, num_angulos, paso, unir_cortes):
         volumen = _CACHE_3D["volumen"]
         if volumen is None:
-            return (no_update,) * 12
+            return (no_update,) * 18
 
         n = volumen.shape[0]
 
@@ -267,23 +288,32 @@ def registrar_callbacks_3d(app):
         fig_corte = _figura_heatmap(corte_recon, "gray")
         fig_sino = _figura_heatmap(sinograma, "hot")
 
-        # Metricas sobre TODO el volumen
-        m = calcular_metricas(volumen, reconstruccion)
-        rmse_txt = f"{m['rmse']:.3f}"
-        ssim_txt = f"{m['ssim']:.2f}"
-        psnr_txt = f"{m['psnr']:.1f}"
+        # Cuantificacion de la forma sobre TODO el volumen (solapamiento 3D de
+        # las siluetas, no intensidades).
+        m = cuantificar_forma(volumen, reconstruccion)
+        dice_txt = f"{m['dice']:.2f}"
+        iou_txt = f"{m['iou']:.2f}"
+        area_txt = f"{m['area']:.0f}%"
 
-        # Anchos de las barras (0-100%).
-        w_rmse = max(4, min(100, (1 - min(m["rmse"], 0.3) / 0.3) * 100))
-        w_ssim = max(0, min(100, m["ssim"] * 100))
-        w_psnr = max(0, min(100, m["psnr"] / 40 * 100))
+        # Veredicto cualitativo (Buena/Aceptable/Pobre) + clase de color por metrica.
+        dice_lbl, dice_cls = clasificar_metrica("dice", m["dice"])
+        iou_lbl, iou_cls = clasificar_metrica("iou", m["iou"])
+        area_lbl, area_cls = clasificar_metrica("area", m["area"])
+
+        # Anchos de las barras (0-100%, lleno = mejor). El error de area se invierte.
+        w_dice = max(4, min(100, m["dice"] * 100))
+        w_iou = max(4, min(100, m["iou"] * 100))
+        w_area = max(4, min(100, (1 - min(m["area"], 50.0) / 50.0) * 100))
 
         return (
             fig_recon, fig_corte, fig_sino,
-            rmse_txt, ssim_txt, psnr_txt,
-            {"width": f"{w_rmse:.0f}%"},
-            {"width": f"{w_ssim:.0f}%"},
-            {"width": f"{w_psnr:.0f}%"},
+            dice_txt, iou_txt, area_txt,
+            {"width": f"{w_dice:.0f}%"},
+            {"width": f"{w_iou:.0f}%"},
+            {"width": f"{w_area:.0f}%"},
+            dice_lbl, f"verdict {dice_cls}",
+            iou_lbl, f"verdict {iou_cls}",
+            area_lbl, f"verdict {area_cls}",
             f"{len(indices)} cortes",
             f"z = {z_centro}",
             f"{num_angulos} ang.",

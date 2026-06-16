@@ -135,7 +135,21 @@ body {
 .ct-card-h .m { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--text-dim); }
 
 /* ===================== CONTROL BAR ===================== */
-.controls { display: grid; grid-template-columns: 1.3fr 1.7fr 1.2fr 1.2fr auto auto; gap: 18px; align-items: end; padding: 16px 18px; margin-bottom: 20px; }
+/* Sistema compartido por el Modo 2D y 3D: dos filas (sliders arriba, switches y
+   acciones abajo). Antes el 2D usaba un grid de una sola fila y el 3D tenia su
+   propia clase; se unificaron para mantener coherencia entre modos. El numero de
+   columnas de la fila superior lo fija el modificador .cols-4 / .cols-5. */
+.controls { padding: 16px 18px; margin-bottom: 20px; }
+/* Fila superior: forma + sliders, con ancho generoso para cada uno. */
+.controls .row-top { display: grid; gap: 18px; align-items: end; }
+.controls.cols-4 .row-top { grid-template-columns: 1.3fr 1.7fr 1.2fr 1.2fr; }
+.controls.cols-5 .row-top { grid-template-columns: 1.3fr 1.7fr 1.3fr 1.1fr 1.1fr; }
+/* Fila inferior: switch + acciones. Flex para que las acciones se empujen a la
+   derecha (margin-left:auto) y el switch quede a la izquierda. El divisor
+   superior la separa visualmente de los sliders. */
+.controls .row-bottom { display: flex; align-items: flex-end; gap: 32px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.controls .row-bottom .field.acciones { margin-left: auto; }
+
 .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .field > .clbl { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--text-dim); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .field > .clbl .mu { text-transform: none; font-style: italic; }
@@ -216,20 +230,39 @@ body {
 .pipeline-3d { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: stretch; margin-bottom: 20px; }
 
 /* ===================== VALIDATION ===================== */
-.validation { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; }
-/* ---- validacion 3D: metricas + corte axial + sinograma (3 columnas) ---- */
-.validation-3d { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16px; }
-.metrics { padding: 4px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
-.stat { padding: 14px 12px 13px; border-radius: var(--radius-s); position: relative; }
-.stat .k { font-family: "IBM Plex Mono"; font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
-.stat .val { font-family: "IBM Plex Mono"; font-size: 30px; font-weight: 500; line-height: 1.1; margin-top: 6px; letter-spacing: -.5px; }
+/* Las metricas pasan a ocupar todo el ancho (fila propia) y los visores van
+   debajo, para que las tarjetas explicadas tengan espacio y no se amontonen. */
+.validation { display: flex; flex-direction: column; gap: 16px; }
+.validation-3d { display: flex; flex-direction: column; gap: 16px; }
+/* Fila de visores 3D (corte axial + sinograma) lado a lado. */
+.vis-3d-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.metrics { padding: 6px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+/* ---- Tarjeta explicada de una metrica ---- */
+.stat { padding: 15px 16px 16px; border-radius: var(--radius-s); position: relative; border: 1px solid var(--line); background: rgba(127,127,127,.03); display: flex; flex-direction: column; gap: 4px; }
+.stat-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.stat-head .k { font-family: "IBM Plex Mono"; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--text); font-weight: 600; }
+.stat-head .dir { font-size: 10.5px; color: var(--text-dim); white-space: nowrap; }
+.stat-name { font-size: 12.5px; color: var(--text-soft); }
+.stat-valrow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 4px; }
+.stat .val { font-family: "IBM Plex Mono"; font-size: 30px; font-weight: 500; line-height: 1.1; letter-spacing: -.5px; }
 .stat .val small { font-size: 13px; color: var(--text-dim); font-weight: 400; }
-.stat .bar { height: 3px; border-radius: 3px; background: var(--track-bg); margin-top: 9px; overflow: hidden; }
-.stat .bar i { display: block; height: 100%; border-radius: 3px; }
-.stat.ssim .val { color: var(--accent); }
-.stat.ssim .bar i { background: var(--accent); }
-.stat.rmse .bar i { background: var(--hot); }
-.stat.psnr .bar i { background: var(--text-soft); }
+/* Veredicto cualitativo: pildora de color (verde/ambar/rojo). */
+.verdict { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+.verdict.good { color: #5ad19a; background: rgba(90,209,154,.12); border-color: rgba(90,209,154,.35); }
+.verdict.ok   { color: #e0a64a; background: rgba(224,166,74,.12); border-color: rgba(224,166,74,.35); }
+.verdict.bad  { color: #e06a6a; background: rgba(224,106,106,.12); border-color: rgba(224,106,106,.35); }
+.stat-barrow { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.stat .bar { flex: 1; height: 4px; border-radius: 3px; background: var(--track-bg); overflow: hidden; }
+.stat .bar i { display: block; height: 100%; border-radius: 3px; transition: width .2s; }
+.stat-barrow .ideal { font-family: "IBM Plex Mono"; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.stat-desc { font-size: 11.5px; line-height: 1.45; color: var(--text-dim); margin-top: 6px; }
+/* Color de la barra por metrica (lleno = mejor calidad). */
+.stat.dice .val { color: var(--accent); }
+.stat.dice .bar i { background: var(--accent); }
+.stat.iou .bar i { background: var(--accent); }
+.stat.area .bar i { background: var(--hot); }
 
 .note-foot { margin-top: 22px; padding: 14px 18px; border-radius: var(--radius); border: 1px dashed var(--line-2); color: var(--text-soft); font-size: 13px; display: flex; align-items: center; gap: 12px; background: rgba(127,127,127,.04); }
 .note-foot .ct-mono { color: var(--accent); }
@@ -240,10 +273,17 @@ body {
 .placeholder .big { font-size: 19px; font-weight: 600; margin-bottom: 8px; }
 .placeholder .sm { color: var(--text-soft); font-size: 14px; max-width: 460px; margin: 0 auto; }
 
-@media (max-width: 1080px) { .controls { grid-template-columns: 1fr 1fr 1fr; } }
+@media (max-width: 1080px) {
+  /* En angosto, los sliders de ambos modos pasan a 3 columnas y la fila
+     inferior envuelve. */
+  .controls .row-top { grid-template-columns: 1fr 1fr 1fr; }
+  .controls .row-bottom { flex-wrap: wrap; }
+}
 @media (max-width: 920px) {
   .pipeline, .pipeline-3d { grid-template-columns: 1fr; }
   .connector { flex-direction: row; min-height: 44px; padding: 6px 0; }
   .connector .arrow { width: 60px; }
-  .validation, .validation-3d { grid-template-columns: 1fr; }
+  /* En angosto, las metricas y los visores 3D pasan a una sola columna. */
+  .metrics { grid-template-columns: 1fr; }
+  .vis-3d-row { grid-template-columns: 1fr; }
 }
