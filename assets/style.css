@@ -161,20 +161,20 @@ body {
 .field select.form-select:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-bg) !important; }
 .field select.form-select option { background: var(--panel); color: var(--text); }
 
-/* ---- dcc.Slider (rc-slider) ---- */
-.field .rc-slider { margin: 4px 4px 18px; }
-.field .rc-slider-rail { background: var(--track-bg) !important; height: 4px !important; }
-.field .rc-slider-track { background: var(--accent) !important; height: 4px !important; }
-.field .rc-slider-handle { width: 15px !important; height: 15px !important; margin-top: -5.5px !important; background: var(--text) !important; border: 3px solid var(--accent) !important; opacity: 1 !important; box-shadow: 0 1px 4px rgba(0,0,0,.5) !important; }
-.field .rc-slider-handle:hover, .field .rc-slider-handle:active { border-color: var(--accent) !important; box-shadow: 0 0 0 5px var(--accent-bg) !important; }
-.field .rc-slider-mark-text { color: var(--text-dim) !important; font-family: "IBM Plex Mono", monospace; font-size: 9.5px !important; }
-.field .rc-slider-mark-text-active { color: var(--text-soft) !important; }
-.field .rc-slider-dot { display: none !important; }
-.field .rc-slider-tooltip-inner { background: var(--accent) !important; color: #06222a !important; font-family: "IBM Plex Mono", monospace; font-weight: 600; border-radius: 6px; box-shadow: none; }
-.field .rc-slider-tooltip-arrow { border-bottom-color: var(--accent) !important; border-top-color: var(--accent) !important; }
-/* el de "mu pieza" marcado con .hot pinta su track en ambar */
-.field.hot .rc-slider-track { background: var(--hot) !important; }
-.field.hot .rc-slider-handle { border-color: var(--hot) !important; }
+/* ---- dcc.Slider (Radix-based, class prefix: dash-slider-*) ---- */
+.field .dash-slider-root { margin: 4px 4px 18px; }
+.field .dash-slider-track { background: var(--track-bg) !important; height: 5px !important; border-radius: 3px; }
+.field .dash-slider-range { background: var(--accent) !important; height: 5px !important; border-radius: 3px; }
+.field .dash-slider-thumb { width: 18px !important; height: 18px !important; background: var(--panel) !important; border: 3px solid var(--accent) !important; border-radius: 50% !important; box-shadow: 0 1px 6px rgba(0,0,0,.6) !important; }
+.field .dash-slider-thumb:focus-visible { border-color: var(--accent) !important; box-shadow: 0 0 0 5px var(--accent-bg) !important; }
+.field .dash-slider-mark { color: var(--text-soft) !important; font-family: "IBM Plex Mono", monospace; font-size: 10px; }
+.field .dash-slider-mark-outside-selection { color: var(--text-dim) !important; }
+.field .dash-slider-dot { display: none !important; }
+.dash-slider-tooltip { background-color: var(--elev) !important; color: var(--text) !important; font-family: "IBM Plex Mono", monospace !important; font-weight: 600 !important; border-radius: 6px; border: 1px solid var(--line-2); padding: 2px 8px; }
+.dash-range-slider-input { background: var(--field) !important; color: var(--text) !important; border: 1px solid var(--line-2) !important; border-radius: 6px; font-family: "IBM Plex Mono", monospace; font-size: 12px; text-align: center; }
+/* el de "mu pieza" marcado con .hot pinta su track y thumb en ambar */
+.field.hot .dash-slider-range { background: var(--hot) !important; }
+.field.hot .dash-slider-thumb { border-color: var(--hot) !important; }
 
 /* ---- switch (dbc.Switch / .form-check) ---- */
 .field .form-check-input { width: 40px !important; height: 22px !important; background: var(--field) !important; border: 1px solid var(--line-2) !important; cursor: pointer; }
