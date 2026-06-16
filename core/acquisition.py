@@ -34,3 +34,16 @@ def generar_sinograma(
     sinograma = radon(phantom, theta=angulos, circle=False)
 
     return sinograma, angulos
+
+
+def proyeccion_en_angulo(imagen: np.ndarray, angulo_grados: float) -> np.ndarray:
+    # La "sombra" que produce UN solo angulo: el perfil 1D de las integrales de
+    # linea (integral de mu dl) a lo largo de los rayos paralelos a ese angulo.
+    # Es, literalmente, una sola columna del sinograma. Asi se ve "lo que mide el
+    # detector" desde una direccion concreta.
+    #
+    # imagen        : corte 2D (mapa de mu).
+    # angulo_grados : direccion del haz, en grados.
+    #
+    # Retorna un ndarray 1D (perfil de la proyeccion en ese angulo).
+    return radon(imagen, theta=[float(angulo_grados)], circle=False)[:, 0]

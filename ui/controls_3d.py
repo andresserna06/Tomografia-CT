@@ -55,8 +55,8 @@ def crear_controles_3d():
                         "N.o de angulos",
                         dcc.Slider(
                             id="slider-angulos-3d",
-                            min=5, max=180, step=1, value=ANGULOS_3D_DEFAULT,
-                            marks={5: "5", 45: "45", 90: "90", 180: "180"},
+                            min=1, max=180, step=1, value=ANGULOS_3D_DEFAULT,
+                            marks={1: "1", 45: "45", 90: "90", 180: "180"},
                             tooltip={"placement": "bottom", "always_visible": True},
                         ),
                     ),

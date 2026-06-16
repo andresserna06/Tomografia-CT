@@ -246,6 +246,47 @@ def _contenido_3d():
         className="validation-3d",
     )
 
+    # Adquisicion del corte: explora COMO se forma el sinograma. Para el corte
+    # seleccionado (clic en el volumen; por defecto el central), un slider elige
+    # un angulo y se ve el corte con la direccion del haz + la "sombra" (la
+    # proyeccion 1D) que produce ese angulo. Es la pieza didactica que conecta
+    # "girar el haz" con "cada columna del sinograma".
+    adquisicion = html.Div(
+        [
+            html.Div(
+                [
+                    html.Div(
+                        [html.Span("Adquisicion del corte", className="t"),
+                         html.Span("la sombra que proyecta cada angulo", className="m")],
+                        className="ct-card-h",
+                    ),
+                    html.Div(
+                        html.Div(
+                            [html.Div("Angulo del haz", className="clbl"),
+                             dcc.Slider(
+                                 id="slider-angulo-sombra-3d",
+                                 min=0, max=180, step=1, value=0,
+                                 marks={0: "0°", 45: "45°", 90: "90°", 135: "135°", 180: "180°"},
+                                 tooltip={"placement": "bottom", "always_visible": True},
+                             )],
+                            className="field",
+                        ),
+                        style={"padding": "16px 18px"},
+                    ),
+                ],
+                className="ct-card",
+            ),
+            html.Div(
+                [
+                    _visor("Corte + haz", "var(--text-soft)", "meta-sombra-3d", "θ = 0°", "graf-corte-haz-3d"),
+                    _visor("Sombra (proyeccion 1D)", "var(--hot)", "meta-sombra-perfil-3d", "—", "graf-sombra-3d"),
+                ],
+                className="vis-3d-row",
+            ),
+        ],
+        className="validation-3d",
+    )
+
     nota = html.Div(
         [
             html.Span("↳"),
@@ -259,7 +300,7 @@ def _contenido_3d():
         className="note-foot",
     )
 
-    return html.Div([controles, pipeline, validacion, nota])
+    return html.Div([controles, pipeline, validacion, adquisicion, nota])
 
 
 def _placeholder(icono, titulo, texto):
@@ -348,6 +389,9 @@ def crear_layout():
             # ¿La pieza 3D va en posicion aleatoria (escondida)? Se desacopla del
             # switch para poder "revelar en el sitio" sin regenerar la posicion.
             dcc.Store(id="store-pos-3d", data=False),
+            # Indice del corte axial seleccionado (clic en el volumen). None = el
+            # central. Lo comparten el sinograma del corte y la vista de sombras.
+            dcc.Store(id="store-z-3d", data=None),
         ],
         fluid=True,
         className="ct-app",

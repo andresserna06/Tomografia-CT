@@ -15,7 +15,7 @@ from dash import Input, Output, State, ctx, no_update
 from config import TAMANO_VOLUMEN
 from core.phantom_3d import crear_phantom_3d
 from core.reconstruction_3d import reconstruir_volumen
-from core.acquisition import generar_sinograma
+from core.acquisition import generar_sinograma, proyeccion_en_angulo
 from core.metrics import cuantificar_forma, clasificar_metrica
 
 
@@ -163,6 +163,59 @@ def _figura_heatmap(datos, colorscale) -> go.Figure:
     return fig
 
 
+def _figura_corte_con_haz(corte, angulo_grados) -> go.Figure:
+    # Heatmap del corte (mapa de mu) con la DIRECCION DEL HAZ superpuesta: varias
+    # lineas paralelas a 'angulo_grados' que representan los rayos que atraviesan
+    # la pieza desde ese angulo. Es la "vista de adquisicion" para ese angulo.
+    fig = go.Figure(data=go.Heatmap(z=corte, colorscale="gray", showscale=False))
+    n = corte.shape[0]
+    c = (n - 1) / 2.0
+    th = np.radians(angulo_grados)
+    # Direccion a lo largo del rayo y direccion perpendicular (separa los rayos).
+    # A th=0 los rayos son verticales (radon integra por columnas) y rotan con th.
+    dx, dy = np.sin(th), np.cos(th)
+    px, py = np.cos(th), -np.sin(th)
+    largo = n  # suficiente para cruzar toda la imagen
+    xs, ys = [], []
+    for off in np.linspace(-0.42 * n, 0.42 * n, 7):
+        x0, y0 = c + off * px - largo * dx, c + off * py - largo * dy
+        x1, y1 = c + off * px + largo * dx, c + off * py + largo * dy
+        xs += [x0, x1, None]
+        ys += [y0, y1, None]
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys, mode="lines",
+        line=dict(color="#36b6d6", width=1.5),
+        opacity=0.85, hoverinfo="skip", showlegend=False,
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", autosize=True,
+    )
+    # y invertido (rango [n-1, 0]) para mostrar la imagen como los demas visores.
+    fig.update_xaxes(visible=False, range=[0, n - 1], constrain="domain")
+    fig.update_yaxes(visible=False, range=[n - 1, 0], scaleanchor="x")
+    return fig
+
+
+def _figura_sombra_1d(sombra) -> go.Figure:
+    # Perfil 1D de la "sombra": la proyeccion (integral de linea) en un solo
+    # angulo. Es una columna del sinograma vista como curva.
+    x = np.arange(len(sombra))
+    fig = go.Figure(go.Scatter(
+        x=x, y=sombra, mode="lines", fill="tozeroy",
+        line=dict(color="#e0a64a", width=2),
+        fillcolor="rgba(224,166,74,0.15)", hoverinfo="skip",
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=8, b=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False, autosize=True,
+    )
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # Registro de callbacks
 # ---------------------------------------------------------------------------
@@ -261,6 +314,8 @@ def registrar_callbacks_3d(app):
         Output("meta-recon-3d", "children"),
         Output("meta-corte-3d", "children"),
         Output("meta-sino-3d", "children"),
+        # Al recalcular todo, la seleccion de corte vuelve al central.
+        Output("store-z-3d", "data"),
         Input("store-token-3d", "data"),
         Input("slider-angulos-3d", "value"),
         Input("slider-paso", "value"),
@@ -269,7 +324,7 @@ def registrar_callbacks_3d(app):
     def _actualizar_reconstruccion_3d(_token, num_angulos, paso, unir_cortes):
         volumen = _CACHE_3D["volumen"]
         if volumen is None:
-            return (no_update,) * 18
+            return (no_update,) * 19
 
         n = volumen.shape[0]
 
@@ -317,41 +372,84 @@ def registrar_callbacks_3d(app):
             f"{len(indices)} cortes",
             f"z = {z_centro}",
             f"{num_angulos} ang.",
+            z_centro,
         )
 
-    # 5) [NUEVO CALLBACK] Interacción: Clic en el volumen 3D muestra la rebanada 2D
+    # 5) Interaccion: clic en el volumen 3D selecciona una rebanada axial. Muestra
+    #    ese corte reconstruido, SU sinograma (sobre el volumen original) y guarda
+    #    el indice en store-z-3d para que la vista de sombras use el mismo corte.
     @app.callback(
         Output("graf-corte-3d", "figure", allow_duplicate=True),
         Output("meta-corte-3d", "children", allow_duplicate=True),
+        Output("graf-sino-3d", "figure", allow_duplicate=True),
+        Output("meta-sino-3d", "children", allow_duplicate=True),
+        Output("store-z-3d", "data", allow_duplicate=True),
         Input("graf-reconstruccion-3d", "clickData"),
+        State("slider-angulos-3d", "value"),
         prevent_initial_call=True,
     )
-    def _mostrar_corte_por_clic(clickData):
-        # Si no hay interacciones válidas o el caché está vacío, no actualizamos
-        if not clickData or _CACHE_3D["reconstruccion"] is None:
-            return no_update, no_update
+    def _mostrar_corte_por_clic(clickData, num_angulos):
+        # Si no hay interaccion valida o el cache esta vacio, no actualizamos.
+        if not clickData or _CACHE_3D["reconstruccion"] is None or _CACHE_3D["volumen"] is None:
+            return (no_update,) * 5
 
         try:
-            # Extraemos el punto de intersección tridimensional capturado por Plotly
+            # Punto de interseccion 3D capturado por Plotly.
             punto = clickData["points"][0]
             z_clicado = punto.get("z", None)
-
             if z_clicado is None:
-                return no_update, no_update
+                return (no_update,) * 5
 
-            # Convertimos la coordenada flotante continua en el índice entero de la matriz
+            # Coordenada continua -> indice entero del corte, acotado a [0, n-1].
             z_index = int(round(z_clicado))
             n = _CACHE_3D["reconstruccion"].shape[0]
-            z_index = max(0, min(z_index, n - 1))  # Control de fronteras seguro
+            z_index = max(0, min(z_index, n - 1))
 
-            # Extraemos la capa axial exacta desde el volumen reconstruido en caché
+            # Corte reconstruido seleccionado.
             corte_seleccionado = _CACHE_3D["reconstruccion"][z_index]
-            
-            # Construimos el heatmap limpio y actualizamos el string de metadata
             fig_corte = _figura_heatmap(corte_seleccionado, "gray")
-            meta_txt = f"z = {z_index} (Seleccionado)"
 
-            return fig_corte, meta_txt
+            # Sinograma del corte SELECCIONADO (sobre el volumen original: es lo
+            # que el escaner mediria en esa rebanada).
+            sinograma, _ = generar_sinograma(_CACHE_3D["volumen"][z_index], num_angulos)
+            fig_sino = _figura_heatmap(sinograma, "hot")
+
+            return (
+                fig_corte, f"z = {z_index} (Seleccionado)",
+                fig_sino, f"{num_angulos} ang. · z = {z_index}",
+                z_index,
+            )
 
         except Exception:
-            return no_update, no_update
+            return (no_update,) * 5
+
+    # 6) Vista de adquisicion: para el corte seleccionado (o el central), dibuja el
+    #    corte con la direccion del haz y la "sombra" (proyeccion 1D) del angulo
+    #    elegido. Asi se ve como cada angulo aporta una columna al sinograma.
+    @app.callback(
+        Output("graf-corte-haz-3d", "figure"),
+        Output("graf-sombra-3d", "figure"),
+        Output("meta-sombra-3d", "children"),
+        Output("meta-sombra-perfil-3d", "children"),
+        Input("slider-angulo-sombra-3d", "value"),
+        Input("store-z-3d", "data"),
+        Input("store-token-3d", "data"),
+    )
+    def _sombra_por_angulo(angulo, z_sel, _token):
+        volumen = _CACHE_3D["volumen"]
+        if volumen is None:
+            return no_update, no_update, no_update, no_update
+
+        n = volumen.shape[0]
+        z = n // 2 if z_sel is None else max(0, min(int(z_sel), n - 1))
+        corte = volumen[z]  # corte ORIGINAL: es el que proyecta la sombra
+
+        fig_haz = _figura_corte_con_haz(corte, angulo)
+        sombra = proyeccion_en_angulo(corte, angulo)
+        fig_sombra = _figura_sombra_1d(sombra)
+
+        return (
+            fig_haz, fig_sombra,
+            f"θ = {angulo}° · z = {z}",
+            f"θ = {angulo}° · {len(sombra)} detectores",
+        )
